@@ -179,7 +179,6 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     # Unsloth's SFTTrainer (optimized for speed)
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
         args=training_args,
         train_dataset=dataset,
         dataset_text_field="text",
