@@ -174,8 +174,6 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         warmup_ratio=WARMUP_RATIO,
         logging_dir=f"{output_dir}/logs",
         report_to="tensorboard",
-        max_seq_length=seq_length,  # Critical for Unsloth
-        dataset_text_field="text",  # For SFTTrainer
     )
     
     # Unsloth's SFTTrainer (optimized for speed)

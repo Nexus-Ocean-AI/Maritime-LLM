@@ -5,6 +5,7 @@ accelerate>=0.20.0
 peft>=0.4.0
 datasets>=2.14.0
 torch>=2.1.0
+torchvision
 scipy
 protobuf
 sentencepiece
