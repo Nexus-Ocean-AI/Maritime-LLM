@@ -1,1 +1,10 @@
 pymongo[srv]
+transformers>=4.37.0
+accelerate
+peft
+datasets
+torch
+bitsandbytes
+scipy
+protobuf
+sentencepiece
