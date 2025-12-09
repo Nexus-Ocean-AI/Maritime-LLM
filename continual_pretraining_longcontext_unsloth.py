@@ -177,11 +177,15 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     )
     
     # Unsloth's SFTTrainer (optimized for speed)
+    # Use formatting_func for compatibility with current TRL version
+    def formatting_prompts_func(examples):
+        return examples["text"]
+    
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
-        dataset_text_field="text",
+        formatting_func=formatting_prompts_func,
         max_seq_length=seq_length,
         packing=True,  # Unsloth's efficient packing
         callbacks=[EnhancedProgressCallback(phase_num, total_phases, phase_name)]
