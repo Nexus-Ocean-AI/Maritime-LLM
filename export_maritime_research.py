@@ -25,7 +25,7 @@ def export_collections():
         for col_name in COLLECTIONS:
             print(f"Starting export for collection: {col_name}")
             collection = db[col_name]
-            output_file = f"{col_name}.jsonl"
+            output_file = f"data/{col_name}.jsonl"
             
             doc_count = 0
             with open(output_file, 'w', encoding='utf-8') as f:

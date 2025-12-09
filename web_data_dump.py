@@ -46,7 +46,7 @@ def dump_all_docs_to_jsonl():
         "text": 1,
     }
 
-    output_filename = f"{OUTPUT_PREFIX}.jsonl"
+    output_filename = f"data/{OUTPUT_PREFIX}.jsonl"
 
     with open(output_filename, "w", encoding="utf-8") as f:
         while True:
