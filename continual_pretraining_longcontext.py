@@ -56,7 +56,7 @@ GRAD_ACCUMULATION_PER_PHASE = {
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 250
 LOGGING_STEPS = 10
-SAVE_TOTAL_LIMIT = 2
+SAVE_TOTAL_LIMIT = None  # Keep ALL checkpoints (all 7 epoch adapters)
 
 # Replay Buffer
 REPLAY_DATASET_NAME = "wikitext"
