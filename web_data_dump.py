@@ -47,6 +47,11 @@ def dump_all_docs_to_jsonl():
     }
 
     output_filename = f"data/{OUTPUT_PREFIX}.jsonl"
+    
+    # Ensure directory exists
+    import os
+    os.makedirs("data", exist_ok=True)
+
 
     with open(output_filename, "w", encoding="utf-8") as f:
         while True:
@@ -77,8 +82,8 @@ def dump_all_docs_to_jsonl():
 
             print(f"Processed batch starting at skip {skip}, wrote {written_in_batch} docs to {output_filename}")
             skip += BATCH_LIMIT
-            if skip > 500:
-                break
+            # if skip > 500:
+            #     break
 
     client.close()
     print(f"Done. Total documents written: {total_docs}")

@@ -27,6 +27,10 @@ def export_collections():
             collection = db[col_name]
             output_file = f"data/{col_name}.jsonl"
             
+            # Ensure directory exists
+            import os
+            os.makedirs("data", exist_ok=True)
+            
             doc_count = 0
             with open(output_file, 'w', encoding='utf-8') as f:
                 # Use a cursor to iterate over all documents

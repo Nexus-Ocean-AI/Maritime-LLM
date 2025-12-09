@@ -4,9 +4,10 @@ from transformers import AutoTokenizer
 
 # Configuration
 FILES_TO_ANALYZE = [
-    "parsed_books.jsonl",
-    "parsed_papers.jsonl",
-    "parsed_technical_manager.jsonl"
+    "data/parsed_books.jsonl",
+    "data/parsed_papers.jsonl",
+    "data/parsed_technical_manager.jsonl",
+    "data/maritime_web_text.jsonl"
 ]
 # Using a standard Qwen tokenizer as fallback/default if the specific one is not available
 # Since Qwen3-30b likely uses the same tokenizer as Qwen 2.5 series.
