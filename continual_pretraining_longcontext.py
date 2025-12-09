@@ -2,6 +2,8 @@ import os
 import glob
 import math
 import torch
+import time
+from datetime import datetime, timedelta
 from datasets import load_dataset, concatenate_datasets
 from transformers import (
     AutoModelForCausalLM,
@@ -12,6 +14,57 @@ from transformers import (
     TrainerCallback
 )
 from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
+
+# Custom Progress Tracking Callback
+class EnhancedProgressCallback(TrainerCallback):
+    """Enhanced progress tracking across phases and epochs."""
+    
+    def __init__(self, phase_num, total_phases, phase_name):
+        self.phase_num = phase_num
+        self.total_phases = total_phases
+        self.phase_name = phase_name
+        self.phase_start_time = None
+        self.last_log_time = None
+        
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.phase_start_time = time.time()
+        self.last_log_time = time.time()
+        print(f"\n🚀 Starting {self.phase_name} (Phase {self.phase_num}/{self.total_phases})")
+        print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """Called every logging_steps - display enhanced progress."""
+        if logs and 'loss' in logs:
+            current_time = time.time()
+            elapsed = current_time - self.phase_start_time
+            elapsed_str = str(timedelta(seconds=int(elapsed)))
+            
+            # Calculate progress
+            progress = state.global_step / state.max_steps if state.max_steps else 0
+            progress_bar = "█" * int(progress * 30) + "░" * (30 - int(progress * 30))
+            
+            # Display
+            print(f"\r[{self.phase_name}] "
+                  f"Epoch {state.epoch:.2f} | "
+                  f"Step {state.global_step}/{state.max_steps} | "
+                  f"Loss: {logs['loss']:.4f} | "
+                  f"LR: {logs.get('learning_rate', 0):.2e} | "
+                  f"Elapsed: {elapsed_str} | "
+                  f"[{progress_bar}] {progress*100:.1f}%", 
+                  end='', flush=True)
+            
+            self.last_log_time = current_time
+    
+    def on_epoch_end(self, args, state, control, **kwargs):
+        print(f"\n✅ Epoch {int(state.epoch)} completed!")
+        
+    def on_train_end(self, args, state, control, **kwargs):
+        total_time = time.time() - self.phase_start_time
+        total_time_str = str(timedelta(seconds=int(total_time)))
+        print(f"\n\n✅ {self.phase_name} Complete!")
+        print(f"⏱️  Phase training time: {total_time_str}")
+        print(f"📊 Final loss: {state.log_history[-1].get('loss', 'N/A'):.4f}")
+        print(f"{'='*80}\n")
 
 # -----------------------------------------------------------------------------
 # Configuration - Epoch-Based Progressive Long Context Training (32K Target)
@@ -210,6 +263,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         args=training_args,
         train_dataset=packed_dataset,
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        callbacks=[EnhancedProgressCallback(phase_num, total_phases, phase_name)]
     )
     
     print(f"Starting Phase {phase_num} training...")
