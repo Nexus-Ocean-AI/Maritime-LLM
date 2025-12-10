@@ -377,7 +377,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         dataloader_num_workers=DATALOADER_WORKERS,
         dataloader_pin_memory=True,
         gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": True},  # Must be True for DeepSpeed ZeRO-3
+        gradient_checkpointing_kwargs={"use_reentrant": False},  # False is more stable with DeepSpeed ZeRO-3 + SDPA
         ddp_find_unused_parameters=False,
         remove_unused_columns=False,
         tf32=True,  # Enable TF32 for faster matmuls on H100
@@ -442,6 +442,7 @@ def main():
         trust_remote_code=True,
         use_cache=False,
         device_map=None,  # Let DeepSpeed handle device placement
+        low_cpu_mem_usage=True,  # Better initialization for DeepSpeed ZeRO-3
     )
     
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
