@@ -346,8 +346,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         dataloader_num_workers=DATALOADER_WORKERS,
         dataloader_pin_memory=DATALOADER_PIN_MEMORY,
         dataloader_prefetch_factor=DATALOADER_PREFETCH,
-        # Only use gradient checkpointing for longer sequences (saves memory but slower)
-        gradient_checkpointing=(seq_length >= 8192),
+        gradient_checkpointing=True,  # Essential for memory - always enabled
         remove_unused_columns=False,  # Required for torch.compile compatibility
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
         # Additional H100 optimizations
