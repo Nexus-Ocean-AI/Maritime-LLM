@@ -102,9 +102,9 @@ BATCH_SIZE_PER_PHASE = {
     32768: 1,     # Minimum for long sequences
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    4096: 8,      # Effective batch = 32
-    16384: 16,    # Effective batch = 16
-    32768: 32,    # Effective batch = 32
+    2048: 8,      # Fixed typo: was 4096, should match batch size keys
+    16384: 16,
+    32768: 32,
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 250
@@ -151,7 +151,7 @@ def load_and_mix_data():
             print(f"Warning: Could not load replay dataset: {e}")
             print("Continuing without replay (higher forgetting risk)")
 
-    return dataset
+    return dataset 
 
 # Global variable to store token statistics
 _CURRENT_TOKEN_STATS = {}
