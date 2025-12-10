@@ -259,11 +259,11 @@ def main():
     if accelerator.is_main_process:
         print(f"\n🔧 Loading model: {MODEL_ID}")
     
-    # Load model with Flash Attention 2
+    # Load model with SDPA (PyTorch's efficient attention - built-in, no extra install)
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        attn_implementation="sdpa",  # Use PyTorch's built-in efficient attention
         trust_remote_code=True,
         device_map=None,  # Let DeepSpeed handle device placement
     )
