@@ -298,34 +298,49 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         print(f"   Effective batch size: {batch_size * grad_accum * accelerator.num_processes}")
         print(f"{'='*80}")
     
-    # Pack sequences for this phase - ONLY on main process to avoid redundant work
+    # Pack sequences for this phase - use cache if available
+    from datasets import load_from_disk
+    
     cache_dir = f"{OUTPUT_DIR}/.cache"
     cache_file = f"{cache_dir}/{phase_name}_packed"
+    cache_exists = os.path.exists(cache_file)
     
-    if accelerator.is_main_process:
-        print(f"\n📦 Packing sequences for {seq_length:,} token context...")
-        os.makedirs(cache_dir, exist_ok=True)
-        
-        num_proc = min(8, os.cpu_count() or 1)
-        packed_dataset = dataset.map(
-            lambda x: pack_sequences(x, tokenizer, seq_length),
-            batched=True,
-            batch_size=1000,
-            remove_columns=dataset.column_names,
-            num_proc=num_proc,
-            desc=f"Packing for {seq_length//1024}K"
-        )
-        # Save to disk for other processes
-        packed_dataset.save_to_disk(cache_file)
-        print(f"   ✅ Packed and cached to {cache_file}")
-    
-    # Wait for main process to finish packing
+    # Check cache status across all processes
     accelerator.wait_for_everyone()
     
-    # Non-main processes load from cache
-    if not accelerator.is_main_process:
-        from datasets import load_from_disk
+    if cache_exists:
+        # Cache exists - all processes load from it
+        if accelerator.is_main_process:
+            print(f"\n📦 Loading cached packed data for {seq_length:,} token context...")
+            print(f"   Cache found at: {cache_file}")
         packed_dataset = load_from_disk(cache_file)
+        if accelerator.is_main_process:
+            print(f"   ✅ Loaded {len(packed_dataset):,} cached sequences")
+    else:
+        # No cache - main process creates it
+        if accelerator.is_main_process:
+            print(f"\n📦 Packing sequences for {seq_length:,} token context (first run)...")
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            num_proc = min(8, os.cpu_count() or 1)
+            packed_dataset = dataset.map(
+                lambda x: pack_sequences(x, tokenizer, seq_length),
+                batched=True,
+                batch_size=1000,
+                remove_columns=dataset.column_names,
+                num_proc=num_proc,
+                desc=f"Packing for {seq_length//1024}K"
+            )
+            # Save to disk for other processes
+            packed_dataset.save_to_disk(cache_file)
+            print(f"   ✅ Packed and cached to {cache_file}")
+        
+        # Wait for main process to finish packing
+        accelerator.wait_for_everyone()
+        
+        # Non-main processes load from cache
+        if not accelerator.is_main_process:
+            packed_dataset = load_from_disk(cache_file)
     
     # Display token statistics
     if accelerator.is_main_process and _CURRENT_TOKEN_STATS:
