@@ -36,7 +36,7 @@ from accelerate import Accelerator
 # Configuration
 # =============================================================================
 
-MODEL_ID = "Qwen/Qwen3-30B-A3B"  # Official Qwen3 30B MoE model
+MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct-2507"  # Official Qwen3 30B MoE model
 DATA_DIR = "data"
 OUTPUT_DIR = "qwen3-30b-maritime-128K-multigpu"
 
@@ -377,7 +377,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         dataloader_num_workers=DATALOADER_WORKERS,
         dataloader_pin_memory=True,
         gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},  # False is more stable with DeepSpeed ZeRO-3 + SDPA
+        gradient_checkpointing_kwargs={"use_reentrant": True},  # Safer with ZeRO-2
         ddp_find_unused_parameters=False,
         remove_unused_columns=False,
         tf32=True,  # Enable TF32 for faster matmuls on H100
