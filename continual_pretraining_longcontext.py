@@ -117,7 +117,7 @@ REPLAY_DATASET_CONFIG = "wikitext-103-raw-v1"
 REPLAY_RATIO = 0.15
 
 # Memory Optimization
-USE_FLASH_ATTENTION_2 = True  # Highly recommended for long context
+USE_FLASH_ATTENTION_2 = False  # Disabled - install with: pip install flash-attn --no-build-isolation
 USE_8BIT = False  # Set True if OOM errors occur
 
 def find_all_data_files(data_dir):
