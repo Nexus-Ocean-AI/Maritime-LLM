@@ -153,12 +153,17 @@ def load_and_mix_data():
 
     return dataset
 
+# Global variable to store token statistics
+_CURRENT_TOKEN_STATS = {}
+
 def pack_sequences(examples, tokenizer, max_length):
     """
     Pack multiple sequences into one to avoid padding waste.
     Now pads the last chunk instead of discarding it!
-    Returns packed sequences with token utilization statistics.
+    Statistics are stored in global _CURRENT_TOKEN_STATS.
     """
+    global _CURRENT_TOKEN_STATS
+    
     all_input_ids = []
     total_raw_tokens = 0
     
@@ -193,14 +198,19 @@ def pack_sequences(examples, tokenizer, max_length):
         packed["attention_mask"].append(attention_mask)
         packed["labels"].append(labels)
     
-    # Store statistics as metadata (will be printed in train_phase)
-    packed["_token_stats"] = {
-        "total_raw_tokens": total_raw_tokens,
-        "total_real_tokens": total_real_tokens,
-        "total_padding_tokens": total_padding_tokens,
-        "num_sequences": len(packed["input_ids"]),
-        "utilization_pct": (total_real_tokens / (total_real_tokens + total_padding_tokens) * 100) if (total_real_tokens + total_padding_tokens) > 0 else 0
-    }
+    # Update global stats (accumulate across batches)
+    if not _CURRENT_TOKEN_STATS:
+        _CURRENT_TOKEN_STATS = {
+            "total_raw_tokens": 0,
+            "total_real_tokens": 0,
+            "total_padding_tokens": 0,
+            "num_sequences": 0
+        }
+    
+    _CURRENT_TOKEN_STATS["total_raw_tokens"] += total_raw_tokens
+    _CURRENT_TOKEN_STATS["total_real_tokens"] += total_real_tokens
+    _CURRENT_TOKEN_STATS["total_padding_tokens"] += total_padding_tokens
+    _CURRENT_TOKEN_STATS["num_sequences"] += len(packed["input_ids"])
     
     return packed
 
@@ -231,6 +241,10 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     print(f"Training Epochs: {num_epochs}")
     print(f"{'='*80}\n")
     
+    # Reset global token stats
+    global _CURRENT_TOKEN_STATS
+    _CURRENT_TOKEN_STATS = {}
+    
     # Pack sequences for this phase's length
     print("Packing sequences...")
     packed_dataset = dataset.map(
@@ -241,37 +255,41 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         desc=f"Packing for {seq_length} tokens"
     )
     
-    # Extract and display token statistics
-    if "_token_stats" in packed_dataset.features:
-        # Aggregate stats from all batches
-        stats = packed_dataset[0]["_token_stats"] if len(packed_dataset) > 0 else {}
-        if stats:
-            print(f"\n📊 Token Utilization Statistics:")
-            print(f"  Raw Tokens (before packing): {stats['total_raw_tokens']:,}")
-            print(f"  Real Tokens (in training): {stats['total_real_tokens']:,}")
-            print(f"  Padding Tokens (ignored): {stats['total_padding_tokens']:,}")
-            print(f"  Utilization Rate: {stats['utilization_pct']:.2f}%")
-            print(f"  Packed Sequences: {len(packed_dataset)} sequences\n")
-            
-            # Log to file
-            import json
-            from datetime import datetime
-            log_file = f"{OUTPUT_DIR}/token_statistics.jsonl"
-            os.makedirs(OUTPUT_DIR, exist_ok=True)
-            
-            log_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "phase": phase_name,
-                "phase_num": phase_num,
-                "seq_length": seq_length,
-                "num_epochs": num_epochs,
-                **stats
-            }
-            
-            with open(log_file, "a") as f:
-                f.write(json.dumps(log_entry) + "\n")
-            
-            print(f"✅ Token stats logged to: {log_file}\n")
+    # Display token statistics from global variable
+    if _CURRENT_TOKEN_STATS:
+        stats = _CURRENT_TOKEN_STATS
+        utilization_pct = (stats["total_real_tokens"] / (stats["total_real_tokens"] + stats["total_padding_tokens"]) * 100) if (stats["total_real_tokens"] + stats["total_padding_tokens"]) > 0 else 0
+        
+        print(f"\n📊 Token Utilization Statistics:")
+        print(f"  Raw Tokens (before packing): {stats['total_raw_tokens']:,}")
+        print(f"  Real Tokens (in training): {stats['total_real_tokens']:,}")
+        print(f"  Padding Tokens (ignored): {stats['total_padding_tokens']:,}")
+        print(f"  Utilization Rate: {utilization_pct:.2f}%")
+        print(f"  Packed Sequences: {stats['num_sequences']} sequences\n")
+        
+        # Log to file
+        import json
+        from datetime import datetime
+        log_file = f"{OUTPUT_DIR}/token_statistics.jsonl"
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "phase": phase_name,
+            "phase_num": phase_num,
+            "seq_length": seq_length,
+            "num_epochs": num_epochs,
+            "total_raw_tokens": stats["total_raw_tokens"],
+            "total_real_tokens": stats["total_real_tokens"],
+            "total_padding_tokens": stats["total_padding_tokens"],
+            "num_sequences": stats["num_sequences"],
+            "utilization_pct": utilization_pct
+        }
+        
+        with open(log_file, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+        
+        print(f"✅ Token stats logged to: {log_file}\n")
     
     print(f"Packed dataset size: {len(packed_dataset)} sequences")
     
