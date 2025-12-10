@@ -1,0 +1,154 @@
+# =============================================================================
+# Configuration for Qwen3-30B Continual Pre-Training with Unsloth
+# Target: 128K context window on 8×H100 GPUs
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Configuration
+# -----------------------------------------------------------------------------
+model:
+  # Primary model - Qwen3-30B MoE (30B total, 3.3B active)
+  model_id: "unsloth/Qwen3-30B-A3B"
+  
+  # Fallback models if primary not available
+  alternative_models:
+    - "unsloth/Qwen3-30B-A3B"
+    - "Qwen/Qwen3-30B-A3B"
+    - "unsloth/Qwen3-30B-A3B-128K"
+
+# -----------------------------------------------------------------------------
+# Data Configuration
+# -----------------------------------------------------------------------------
+data:
+  data_dir: "data"
+  output_dir: "qwen3-30b-maritime-128K-cpt"
+  
+  # Replay buffer for catastrophic forgetting prevention
+  replay:
+    enabled: true
+    dataset_name: "wikitext"
+    dataset_config: "wikitext-103-raw-v1"
+    ratio: 0.10  # 10% replay data
+
+# -----------------------------------------------------------------------------
+# LoRA Configuration - Optimized for 30B Model
+# -----------------------------------------------------------------------------
+lora:
+  r: 128                    # Higher rank for larger model
+  alpha: 256                # Alpha = 2 * R is a good rule
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  # Additional modules for MoE models
+  moe_target_modules:
+    - "gate"
+
+# -----------------------------------------------------------------------------
+# Progressive Context Training Schedule
+# Strategy: Start small, gradually extend context
+# Each phase trains on FULL dataset at increasing context lengths
+# -----------------------------------------------------------------------------
+training:
+  progressive_training: true
+  
+  context_schedule:
+    # Phase 1: Fast domain adaptation at short context
+    - name: "Phase_1_Domain_4K"
+      max_seq_length: 4096
+      num_epochs: 2
+      learning_rate: 2.0e-4
+    
+    # Phase 2: Medium context learning
+    - name: "Phase_2_Medium_16K"
+      max_seq_length: 16384
+      num_epochs: 2
+      learning_rate: 1.0e-4
+    
+    # Phase 3: Long context introduction
+    - name: "Phase_3_Long_32K"
+      max_seq_length: 32768
+      num_epochs: 2
+      learning_rate: 5.0e-5
+    
+    # Phase 4: Extended context mastery
+    - name: "Phase_4_Extended_64K"
+      max_seq_length: 65536
+      num_epochs: 2
+      learning_rate: 2.0e-5
+    
+    # Phase 5: Ultra-long context refinement (128K)
+    - name: "Phase_5_Ultra_128K"
+      max_seq_length: 131072
+      num_epochs: 3
+      learning_rate: 1.0e-5
+
+  # Single phase config (if progressive_training is false)
+  single_phase:
+    name: "Direct_128K"
+    max_seq_length: 131072
+    num_epochs: 5
+    learning_rate: 5.0e-5
+
+# -----------------------------------------------------------------------------
+# Batch Size Configuration (per GPU, per context length)
+# Optimized for 8×H100 (80GB each) with ZeRO-3 sharding
+# -----------------------------------------------------------------------------
+batch_sizes:
+  # context_length: batch_size
+  4096: 4       # ~20GB per GPU
+  16384: 2      # ~40GB per GPU
+  32768: 1      # ~60GB per GPU
+  65536: 1      # ~70GB per GPU (may need offloading)
+  131072: 1     # ~75GB per GPU (flash attention required)
+
+# -----------------------------------------------------------------------------
+# Gradient Accumulation (per context length)
+# Effective batch = batch_size * grad_accum * num_gpus
+# -----------------------------------------------------------------------------
+gradient_accumulation:
+  # context_length: grad_accum_steps
+  4096: 8       # Effective batch: 4 * 8 * 8 = 256
+  16384: 16     # Effective batch: 2 * 16 * 8 = 256
+  32768: 32     # Effective batch: 1 * 32 * 8 = 256
+  65536: 32     # Effective batch: 1 * 32 * 8 = 256
+  131072: 64    # Effective batch: 1 * 64 * 8 = 512
+
+# -----------------------------------------------------------------------------
+# Training Hyperparameters
+# -----------------------------------------------------------------------------
+hyperparameters:
+  warmup_ratio: 0.03
+  logging_steps: 10
+  save_total_limit: 2           # Keep only recent checkpoints
+  dataloader_num_workers: 4
+  optimizer: "adamw_8bit"       # 8-bit Adam for memory efficiency
+  lr_scheduler_type: "cosine"
+
+# -----------------------------------------------------------------------------
+# Memory & Multi-GPU Settings
+# -----------------------------------------------------------------------------
+memory:
+  use_4bit: false               # Set true if OOM (17.5GB vs 60GB)
+  use_gradient_checkpointing: true  # Essential for 128K context
+  deepspeed_stage: 3            # ZeRO-3 for 30B model across 8 GPUs
+
+# -----------------------------------------------------------------------------
+# Logging & Monitoring
+# -----------------------------------------------------------------------------
+logging:
+  report_to:
+    - "tensorboard"
+  log_dir_suffix: "logs"
+
+# -----------------------------------------------------------------------------
+# Environment Settings (auto-configured)
+# -----------------------------------------------------------------------------
+environment:
+  pytorch_alloc_conf: "expandable_segments:True"
+  trl_experimental_silence: "1"
