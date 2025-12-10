@@ -188,8 +188,10 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     def formatting_prompts_func(examples):
         return examples["text"]
     
+    # Unsloth's SFTTrainer needs the tokenizer explicitly
     trainer = SFTTrainer(
         model=model,
+        tokenizer=tokenizer,  # Unsloth requires this
         args=training_args,
         train_dataset=dataset,
         formatting_func=formatting_prompts_func,
