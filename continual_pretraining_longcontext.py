@@ -245,7 +245,6 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         logging_steps=LOGGING_STEPS,
         save_strategy="epoch",  # Save after each epoch
         save_total_limit=SAVE_TOTAL_LIMIT,
-        evaluation_strategy="no",
         bf16=(dtype == torch.bfloat16),
         fp16=(dtype == torch.float16),
         optim="adamw_torch",
