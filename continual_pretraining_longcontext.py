@@ -78,9 +78,9 @@ OUTPUT_DIR = "qwen-maritime-longcontext-cpt"
 # This ensures the model learns both short-range and long-range patterns in all documents
 PROGRESSIVE_TRAINING = True
 CONTEXT_SCHEDULE = [
-    {"name": "Phase_1a_Short", "max_seq_length": 2048, "num_epochs": 1},    # 1 epoch at 2K - Fast domain learning
-    {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 2},  # 2 epochs at 16K - Medium context
-    {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 4},    # 4 epochs at 32K - Master long context
+    {"name": "Phase_1a_Short", "max_seq_length": 2048, "num_epochs": 4},    # 1 epoch at 2K - Fast domain learning
+    {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 3},  # 2 epochs at 16K - Medium context
+    {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 3},    # 4 epochs at 32K - Master long context
 ]
 
 # Or set single length for direct training (NOT RECOMMENDED for 32K)
@@ -94,17 +94,17 @@ LORA_R = 64
 LORA_ALPHA = 128
 LORA_DROPOUT = 0.05
 
-# Training Hyperparameters
+# Training Hyperparameters  
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    2048: 32,     # Increased 8x for H100 80GB (was 4)
-    16384: 6,     # Increased 6x (was 1)
-    32768: 3,     # Increased 3x (was 1)
+    2048: 16,     # Balanced for H100 (4x increase from original)
+    16384: 4,     # 4x increase
+    32768: 2,     # 2x increase
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    2048: 1,      # Reduced to let batch size do the work (was 8)
-    16384: 3,     # Reduced (was 16)
-    32768: 6,     # Reduced (was 32)
+    2048: 2,      # Half of original
+    16384: 4,     # Quarter of original
+    32768: 8,     # Quarter of original
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 250
