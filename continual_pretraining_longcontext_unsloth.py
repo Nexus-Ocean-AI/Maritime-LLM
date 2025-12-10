@@ -186,7 +186,6 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         args=training_args,
         train_dataset=dataset,
         formatting_func=formatting_prompts_func,
-        max_seq_length=seq_length,
         packing=True,  # Unsloth's efficient packing
         callbacks=[EnhancedProgressCallback(phase_num, total_phases, phase_name)]
     )
