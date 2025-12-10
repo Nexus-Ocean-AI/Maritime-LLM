@@ -11,10 +11,17 @@ import glob
 import torch
 import time
 from datetime import datetime, timedelta
-from datasets import load_dataset, concatenate_datasets
-from transformers import TrainingArguments, DataCollatorForLanguageModeling, TrainerCallback
-from trl import SFTTrainer
+
+# Silence TRL experimental warnings
+os.environ["TRL_EXPERIMENTAL_SILENCE"] = "1"
+
+# Import unsloth first (as recommended)
+import unsloth
 from unsloth import FastLanguageModel, is_bfloat16_supported
+
+from datasets import load_dataset, concatenate_datasets
+from transformers import TrainingArguments, TrainerCallback
+from trl import SFTTrainer
 
 # Custom Progress Tracking Callback
 class EnhancedProgressCallback(TrainerCallback):
@@ -186,7 +193,6 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         args=training_args,
         train_dataset=dataset,
         formatting_func=formatting_prompts_func,
-        packing=True,  # Unsloth's efficient packing
         callbacks=[EnhancedProgressCallback(phase_num, total_phases, phase_name)]
     )
     
