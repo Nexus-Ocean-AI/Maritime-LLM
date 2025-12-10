@@ -59,18 +59,20 @@ LORA_TARGET_MODULES = [
 ]
 
 # Batch sizes per context length (per GPU)
+# Reduced batch sizes for ZeRO-3 without gradient checkpointing
 BATCH_SIZE_PER_PHASE = {
-    4096: 4,
-    16384: 2,
+    4096: 2,
+    16384: 1,
     32768: 1,
     65536: 1,
     131072: 1,
 }
 
+# Increased grad accumulation to maintain effective batch size
 GRAD_ACCUMULATION_PER_PHASE = {
-    4096: 4,
-    16384: 8,
-    32768: 16,
+    4096: 8,
+    16384: 16,
+    32768: 32,
     65536: 32,
     131072: 32,
 }
@@ -391,8 +393,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         report_to=["tensorboard"],
         dataloader_num_workers=DATALOADER_WORKERS,
         dataloader_pin_memory=True,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": True},  # Safer with ZeRO-2
+        gradient_checkpointing=False,  # Disabled - incompatible with DeepSpeed ZeRO-3
         ddp_find_unused_parameters=False,
         remove_unused_columns=False,
         tf32=True,  # Enable TF32 for faster matmuls on H100
