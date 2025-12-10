@@ -1,44 +1,82 @@
+# =============================================================================
 # Requirements for Unsloth + Qwen3-30B Training on Multi-GPU (8×H100)
 # Target: 128K context length continual pretraining
+# =============================================================================
+#
+# ⚠️  IMPORTANT: Two-stage installation required!
+#
+# Stage 1 - Install base dependencies (includes PyTorch):
+#   pip install -r requirements_unsloth_qwen3.txt
+#
+# Stage 2 - Install flash-attn AFTER PyTorch is installed:
+#   pip install flash-attn --no-build-isolation
+#
+# =============================================================================
 
-# Core Dependencies
+# -----------------------------------------------------------------------------
+# Core Dependencies (must be installed FIRST)
+# -----------------------------------------------------------------------------
 torch>=2.4.0
 triton>=3.0.0
 
+# -----------------------------------------------------------------------------
 # Unsloth - Install from source for latest features
-# Run: pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+# -----------------------------------------------------------------------------
 unsloth @ git+https://github.com/unslothai/unsloth.git
 
 # For 128K context, requires unsloth extended context support
 unsloth-zoo>=2024.12.0
 
+# -----------------------------------------------------------------------------
 # Transformers with Qwen3 support
+# -----------------------------------------------------------------------------
 transformers>=4.46.0
 tokenizers>=0.20.0
 
+# -----------------------------------------------------------------------------
 # Training framework
+# -----------------------------------------------------------------------------
 trl>=0.12.0
 peft>=0.13.0
 bitsandbytes>=0.44.0
 
+# -----------------------------------------------------------------------------
 # Distributed Training (for 8×H100)
+# -----------------------------------------------------------------------------
 accelerate>=1.1.0
 deepspeed>=0.15.0
 
+# -----------------------------------------------------------------------------
 # Data processing
+# -----------------------------------------------------------------------------
 datasets>=3.0.0
 
-# Memory optimization
-flash-attn>=2.6.0  # Install with: pip install flash-attn --no-build-isolation
-
+# -----------------------------------------------------------------------------
 # Monitoring & Logging
+# -----------------------------------------------------------------------------
 tensorboard>=2.18.0
 wandb>=0.18.0
 
+# -----------------------------------------------------------------------------
 # Utilities
+# -----------------------------------------------------------------------------
 tqdm>=4.66.0
 pyyaml>=6.0.0
 packaging>=24.0
 
+# -----------------------------------------------------------------------------
+# ⚠️  Flash Attention - DO NOT include here, install separately!
+# -----------------------------------------------------------------------------
+# flash-attn requires PyTorch to be installed first.
+# After installing this requirements file, run:
+#
+#   pip install flash-attn --no-build-isolation
+#
+# For pre-built wheels (faster install):
+#   pip install flash-attn --no-build-isolation --index-url https://download.pytorch.org/whl/cu121
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # Optional: For vLLM inference after training
+# -----------------------------------------------------------------------------
 # vllm>=0.6.0
