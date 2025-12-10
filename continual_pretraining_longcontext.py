@@ -123,7 +123,7 @@ USE_8BIT = False  # Set True if OOM errors occur
 # Performance Optimizations for H100
 USE_TORCH_COMPILE = True  # Enable PyTorch 2.0 compilation (20-30% speedup)
 DATALOADER_WORKERS = 8  # Parallel data loading (increase if CPU has many cores)
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation
+os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation (updated var name)
 
 def find_all_data_files(data_dir):
     """Finds all jsonl files in the data directory."""
@@ -339,6 +339,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         report_to="tensorboard",
         dataloader_num_workers=2,
         gradient_checkpointing=True,  # Essential for long context
+        remove_unused_columns=False,  # Required for torch.compile compatibility
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
     )
     
