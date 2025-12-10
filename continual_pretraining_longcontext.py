@@ -97,14 +97,14 @@ LORA_DROPOUT = 0.05
 # Training Hyperparameters
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    2048: 4,      # Can afford larger batch for short sequences
-    16384: 1,     # Reduce for medium
-    32768: 1,     # Minimum for long sequences
+    2048: 32,     # Increased 8x for H100 80GB (was 4)
+    16384: 6,     # Increased 6x (was 1)
+    32768: 3,     # Increased 3x (was 1)
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    2048: 8,      # Fixed typo: was 4096, should match batch size keys
-    16384: 16,
-    32768: 32,
+    2048: 1,      # Reduced to let batch size do the work (was 8)
+    16384: 3,     # Reduced (was 16)
+    32768: 6,     # Reduced (was 32)
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 250
