@@ -121,7 +121,7 @@ USE_FLASH_ATTENTION_2 = False  # Disabled - install with: pip install flash-attn
 USE_8BIT = False  # Set True if OOM errors occur
 
 # Performance Optimizations for H100
-USE_TORCH_COMPILE = True  # Enable PyTorch 2.0 compilation (20-30% speedup)
+USE_TORCH_COMPILE = False  # Disabled - incompatible with gradient checkpointing + LoRA
 DATALOADER_WORKERS = 8  # Parallel data loading (increase if CPU has many cores)
 os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation (updated var name)
 
