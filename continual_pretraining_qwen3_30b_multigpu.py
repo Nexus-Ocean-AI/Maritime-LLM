@@ -298,19 +298,34 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         print(f"   Effective batch size: {batch_size * grad_accum * accelerator.num_processes}")
         print(f"{'='*80}")
     
-    # Pack sequences for this phase
+    # Pack sequences for this phase - ONLY on main process to avoid redundant work
+    cache_dir = f"{OUTPUT_DIR}/.cache"
+    cache_file = f"{cache_dir}/{phase_name}_packed"
+    
     if accelerator.is_main_process:
         print(f"\n📦 Packing sequences for {seq_length:,} token context...")
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        num_proc = min(8, os.cpu_count() or 1)
+        packed_dataset = dataset.map(
+            lambda x: pack_sequences(x, tokenizer, seq_length),
+            batched=True,
+            batch_size=1000,
+            remove_columns=dataset.column_names,
+            num_proc=num_proc,
+            desc=f"Packing for {seq_length//1024}K"
+        )
+        # Save to disk for other processes
+        packed_dataset.save_to_disk(cache_file)
+        print(f"   ✅ Packed and cached to {cache_file}")
     
-    num_proc = min(8, os.cpu_count() or 1)
-    packed_dataset = dataset.map(
-        lambda x: pack_sequences(x, tokenizer, seq_length),
-        batched=True,
-        batch_size=1000,
-        remove_columns=dataset.column_names,
-        num_proc=num_proc,
-        desc=f"Packing for {seq_length//1024}K"
-    )
+    # Wait for main process to finish packing
+    accelerator.wait_for_everyone()
+    
+    # Non-main processes load from cache
+    if not accelerator.is_main_process:
+        from datasets import load_from_disk
+        packed_dataset = load_from_disk(cache_file)
     
     # Display token statistics
     if accelerator.is_main_process and _CURRENT_TOKEN_STATS:
@@ -362,7 +377,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         dataloader_num_workers=DATALOADER_WORKERS,
         dataloader_pin_memory=True,
         gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
+        gradient_checkpointing_kwargs={"use_reentrant": True},  # Must be True for DeepSpeed ZeRO-3
         ddp_find_unused_parameters=False,
         remove_unused_columns=False,
         tf32=True,  # Enable TF32 for faster matmuls on H100
