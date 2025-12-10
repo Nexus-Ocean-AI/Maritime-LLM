@@ -94,17 +94,17 @@ LORA_R = 64
 LORA_ALPHA = 128
 LORA_DROPOUT = 0.05
 
-# Training Hyperparameters  
+# Training Hyperparameters - Conservative for H100 to avoid OOM
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    2048: 16,     # Balanced for H100 (4x increase from original)
-    16384: 4,     # 4x increase
-    32768: 2,     # 2x increase
+    2048: 8,      # Conservative 2x increase (was 4)
+    16384: 2,     # Conservative 2x increase (was 1)
+    32768: 1,     # Keep at 1 for safety
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    2048: 2,      # Half of original
-    16384: 4,     # Quarter of original
-    32768: 8,     # Quarter of original
+    2048: 4,      # Half of original 8
+    16384: 8,     # Half of original 16
+    32768: 16,    # Half of original 32
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 250
@@ -119,6 +119,11 @@ REPLAY_RATIO = 0.15
 # Memory Optimization
 USE_FLASH_ATTENTION_2 = False  # Disabled - install with: pip install flash-attn --no-build-isolation
 USE_8BIT = False  # Set True if OOM errors occur
+
+# Performance Optimizations for H100
+USE_TORCH_COMPILE = True  # Enable PyTorch 2.0 compilation (20-30% speedup)
+DATALOADER_WORKERS = 8  # Parallel data loading (increase if CPU has many cores)
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation
 
 def find_all_data_files(data_dir):
     """Finds all jsonl files in the data directory."""
@@ -416,6 +421,13 @@ def main():
     else:
         print("WARNING: Full fine-tuning at 32K context requires 200GB+ VRAM")
         model.gradient_checkpointing_enable()
+    
+    # Compile model for H100 speedup (PyTorch 2.0+)
+    if USE_TORCH_COMPILE and hasattr(torch, 'compile'):
+        print("\n🚀 Compiling model with torch.compile()...")
+        print("This will take a few minutes but speeds up training by 20-30%!")
+        model = torch.compile(model, mode="reduce-overhead")
+        print("✅ Model compiled!\n")
     
     # 5. Progressive Training
     if PROGRESSIVE_TRAINING:
