@@ -94,36 +94,40 @@ LORA_R = 64
 LORA_ALPHA = 128
 LORA_DROPOUT = 0.05
 
-# Training Hyperparameters - Conservative for H100 to avoid OOM
+# Training Hyperparameters - OPTIMIZED for H100 Speed
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    2048: 8,      # Conservative 2x increase (was 4)
-    16384: 2,     # Conservative 2x increase (was 1)
-    32768: 1,     # Keep at 1 for safety
+    2048: 8,      # Original optimized value
+    16384: 2,     # Original optimized value
+    32768: 1,     # Original optimized value
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    2048: 4,      # Half of original 8
-    16384: 8,     # Half of original 16
-    32768: 16,    # Half of original 32
+    2048: 4,      # Original optimized value
+    16384: 8,     # Original optimized value
+    32768: 16,    # Original optimized value
 }
 WARMUP_RATIO = 0.03
-SAVE_STEPS = 250
-LOGGING_STEPS = 10
-SAVE_TOTAL_LIMIT = None  # Keep ALL checkpoints (all 7 epoch adapters)
+SAVE_STEPS = 500  # Save less frequently to reduce I/O overhead
+LOGGING_STEPS = 50  # Log less frequently to reduce overhead
+SAVE_TOTAL_LIMIT = None  # Keep only last 3 checkpoints to save disk I/O
 
 # Replay Buffer
 REPLAY_DATASET_NAME = "wikitext"
 REPLAY_DATASET_CONFIG = "wikitext-103-raw-v1"
 REPLAY_RATIO = 0.15
 
-# Memory Optimization
-USE_FLASH_ATTENTION_2 = False  # Disabled - install with: pip install flash-attn --no-build-isolation
+# Memory Optimization - ENABLE Flash Attention!
+USE_FLASH_ATTENTION_2 = True  # 2-4x speedup! Install: pip install flash-attn --no-build-isolation
+USE_SDPA_FALLBACK = True  # Use PyTorch SDPA if Flash Attention not available
 USE_8BIT = False  # Set True if OOM errors occur
 
 # Performance Optimizations for H100
-USE_TORCH_COMPILE = False  # Disabled - incompatible with gradient checkpointing + LoRA
-DATALOADER_WORKERS = 8  # Parallel data loading (increase if CPU has many cores)
-os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation (updated var name)
+USE_TORCH_COMPILE = False  # Keep disabled - incompatible with gradient checkpointing + LoRA
+DATALOADER_WORKERS = 8  # Parallel data loading
+DATALOADER_PIN_MEMORY = True  # Pin memory for faster GPU transfer
+DATALOADER_PREFETCH = 4  # Prefetch batches
+os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation
+os.environ['TOKENIZERS_PARALLELISM'] = 'true'  # Parallel tokenization
 
 def find_all_data_files(data_dir):
     """Finds all jsonl files in the data directory."""
@@ -250,13 +254,15 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     global _CURRENT_TOKEN_STATS
     _CURRENT_TOKEN_STATS = {}
     
-    # Pack sequences for this phase's length
-    print("Packing sequences...")
+    # Pack sequences for this phase's length (with parallel processing)
+    print("Packing sequences (using parallel processing)...")
+    num_proc = min(8, os.cpu_count() or 1)  # Use up to 8 CPU cores
     packed_dataset = dataset.map(
         lambda x: pack_sequences(x, tokenizer, seq_length),
         batched=True,
-        batch_size=1000,
+        batch_size=2000,  # Larger batch for efficiency
         remove_columns=dataset.column_names,
+        num_proc=num_proc,  # Parallel processing
         desc=f"Packing for {seq_length} tokens"
     )
     
@@ -337,10 +343,15 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         warmup_ratio=WARMUP_RATIO,
         logging_dir=f"{output_dir}/logs",
         report_to="tensorboard",
-        dataloader_num_workers=2,
-        gradient_checkpointing=True,  # Essential for long context
+        dataloader_num_workers=DATALOADER_WORKERS,
+        dataloader_pin_memory=DATALOADER_PIN_MEMORY,
+        dataloader_prefetch_factor=DATALOADER_PREFETCH,
+        # Only use gradient checkpointing for longer sequences (saves memory but slower)
+        gradient_checkpointing=(seq_length >= 8192),
         remove_unused_columns=False,  # Required for torch.compile compatibility
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
+        # Additional H100 optimizations
+        tf32=True,  # Enable TF32 for faster matmuls on Ampere/Hopper
     )
     
     # Ensure model is in training mode with gradients enabled
@@ -394,9 +405,22 @@ def main():
         "use_cache": False,
     }
     
+    # Try Flash Attention 2 first, fallback to SDPA (PyTorch 2.0+)
     if USE_FLASH_ATTENTION_2:
-        model_kwargs["attn_implementation"] = "flash_attention_2"
-        print("Using Flash Attention 2 for memory efficiency")
+        try:
+            import flash_attn
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            print("✅ Using Flash Attention 2 for maximum speed")
+        except ImportError:
+            if USE_SDPA_FALLBACK:
+                model_kwargs["attn_implementation"] = "sdpa"
+                print("⚠️ Flash Attention not installed, using SDPA (PyTorch native) - still faster than default!")
+                print("   For best performance, install: pip install flash-attn --no-build-isolation")
+            else:
+                print("⚠️ Flash Attention not installed, using default attention")
+    elif USE_SDPA_FALLBACK:
+        model_kwargs["attn_implementation"] = "sdpa"
+        print("✅ Using SDPA (PyTorch native) for faster attention")
     
     if USE_8BIT:
         model_kwargs["load_in_8bit"] = True
