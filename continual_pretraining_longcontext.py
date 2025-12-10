@@ -156,22 +156,51 @@ def load_and_mix_data():
 def pack_sequences(examples, tokenizer, max_length):
     """
     Pack multiple sequences into one to avoid padding waste.
-    Critical for efficient long-context training.
+    Now pads the last chunk instead of discarding it!
+    Returns packed sequences with token utilization statistics.
     """
     all_input_ids = []
+    total_raw_tokens = 0
+    
     for text in examples["text"]:
         tokens = tokenizer(text, truncation=True, max_length=max_length, add_special_tokens=True)
         all_input_ids.extend(tokens["input_ids"])
         all_input_ids.append(tokenizer.eos_token_id)
+        total_raw_tokens += len(tokens["input_ids"]) + 1  # +1 for EOS
     
     packed = {"input_ids": [], "attention_mask": [], "labels": []}
+    total_real_tokens = 0
+    total_padding_tokens = 0
     
     for i in range(0, len(all_input_ids), max_length):
         chunk = all_input_ids[i:i + max_length]
-        if len(chunk) == max_length:
-            packed["input_ids"].append(chunk)
-            packed["attention_mask"].append([1] * max_length)
-            packed["labels"].append(chunk)
+        
+        # Pad the last chunk if it's shorter than max_length
+        if len(chunk) < max_length:
+            padding_length = max_length - len(chunk)
+            chunk = chunk + [tokenizer.pad_token_id] * padding_length
+            attention_mask = [1] * (max_length - padding_length) + [0] * padding_length
+            # Set labels to -100 for padded tokens (ignored in loss)
+            labels = chunk[:max_length - padding_length] + [-100] * padding_length
+            total_real_tokens += (max_length - padding_length)
+            total_padding_tokens += padding_length
+        else:
+            attention_mask = [1] * max_length
+            labels = chunk
+            total_real_tokens += max_length
+        
+        packed["input_ids"].append(chunk)
+        packed["attention_mask"].append(attention_mask)
+        packed["labels"].append(labels)
+    
+    # Store statistics as metadata (will be printed in train_phase)
+    packed["_token_stats"] = {
+        "total_raw_tokens": total_raw_tokens,
+        "total_real_tokens": total_real_tokens,
+        "total_padding_tokens": total_padding_tokens,
+        "num_sequences": len(packed["input_ids"]),
+        "utilization_pct": (total_real_tokens / (total_real_tokens + total_padding_tokens) * 100) if (total_real_tokens + total_padding_tokens) > 0 else 0
+    }
     
     return packed
 
@@ -211,6 +240,39 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         remove_columns=dataset.column_names,
         desc=f"Packing for {seq_length} tokens"
     )
+    
+    # Extract and display token statistics
+    if "_token_stats" in packed_dataset.features:
+        # Aggregate stats from all batches
+        stats = packed_dataset[0]["_token_stats"] if len(packed_dataset) > 0 else {}
+        if stats:
+            print(f"\n📊 Token Utilization Statistics:")
+            print(f"  Raw Tokens (before packing): {stats['total_raw_tokens']:,}")
+            print(f"  Real Tokens (in training): {stats['total_real_tokens']:,}")
+            print(f"  Padding Tokens (ignored): {stats['total_padding_tokens']:,}")
+            print(f"  Utilization Rate: {stats['utilization_pct']:.2f}%")
+            print(f"  Packed Sequences: {len(packed_dataset)} sequences\n")
+            
+            # Log to file
+            import json
+            from datetime import datetime
+            log_file = f"{OUTPUT_DIR}/token_statistics.jsonl"
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "phase": phase_name,
+                "phase_num": phase_num,
+                "seq_length": seq_length,
+                "num_epochs": num_epochs,
+                **stats
+            }
+            
+            with open(log_file, "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+            
+            print(f"✅ Token stats logged to: {log_file}\n")
+    
     print(f"Packed dataset size: {len(packed_dataset)} sequences")
     
     # Get phase-specific hyperparameters
@@ -256,6 +318,11 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         gradient_checkpointing=True,  # Essential for long context
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
     )
+    
+    # Ensure model is in training mode with gradients enabled
+    model.train()
+    if hasattr(model, 'enable_input_require_grads'):
+        model.enable_input_require_grads()
     
     trainer = Trainer(
         model=model,
