@@ -219,7 +219,9 @@ REPLAY_RATIO = 0.10  # 10% replay data
 # Multi-GPU & Memory Settings
 # =============================================================================
 
-USE_4BIT = False          # Set True if OOM (uses 17.5GB instead of 60GB)
+# 4-bit quantization: Set False when using multi-GPU with DeepSpeed ZeRO-3
+# The model will be sharded across all 8 GPUs (~7.5GB per GPU for 30B model)
+USE_4BIT = False          # Full precision with DeepSpeed ZeRO-3 sharding
 USE_GRADIENT_CHECKPOINTING = True  # Essential for 128K context
 
 # DeepSpeed settings (configured via accelerate_config.yaml)
