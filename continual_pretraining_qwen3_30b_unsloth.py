@@ -227,17 +227,34 @@ DEEPSPEED_STAGE = 3       # ZeRO-3 for 30B model across 8 GPUs
 
 
 def find_all_data_files(data_dir):
-    """Find all maritime training data files."""
+    """Find the consolidated maritime training data file.
+    
+    Uses maritime_pretraining_data.jsonl which contains all data sources
+    (including web text) already merged.
+    """
+    # Primary consolidated data file
+    primary_file = os.path.join(data_dir, "maritime_pretraining_data.jsonl")
+    
+    if os.path.exists(primary_file):
+        print(f"📁 Using consolidated data file:")
+        print(f"   - {os.path.basename(primary_file)}")
+        return [primary_file]
+    
+    # Fallback: look for any pretraining data file
+    files = glob.glob(os.path.join(data_dir, "*pretraining*.jsonl"))
+    if files:
+        print(f"📁 Found {len(files)} pretraining data files:")
+        for f in files:
+            print(f"   - {os.path.basename(f)}")
+        return files
+    
+    # Last resort: use all JSONL files
     files = glob.glob(os.path.join(data_dir, "*.jsonl"))
-    # Filter for maritime data files
-    maritime_files = [f for f in files if "maritime" in f.lower() or "pretraining" in f.lower()]
-    if not maritime_files:
-        # If no maritime-specific files, use all JSONL files
-        maritime_files = files
-    print(f"📁 Found {len(maritime_files)} data files:")
-    for f in maritime_files:
-        print(f"   - {os.path.basename(f)}")
-    return maritime_files
+    if files:
+        print(f"📁 Found {len(files)} data files:")
+        for f in files:
+            print(f"   - {os.path.basename(f)}")
+    return files
 
 
 def load_and_mix_data():

@@ -17,6 +17,7 @@
 # Core Dependencies (must be installed FIRST)
 # -----------------------------------------------------------------------------
 torch>=2.4.0
+torchvision>=0.19.0  # Required by unsloth-zoo vision_utils
 triton>=3.0.0
 
 # -----------------------------------------------------------------------------
