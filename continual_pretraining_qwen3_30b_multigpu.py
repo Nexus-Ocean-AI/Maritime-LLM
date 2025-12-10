@@ -220,7 +220,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,  # TRL 0.12+ uses processing_class instead of tokenizer
         args=training_args,
         train_dataset=dataset,
         formatting_func=formatting_func,
