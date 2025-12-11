@@ -59,7 +59,6 @@ LORA_TARGET_MODULES = [
 ]
 
 # Batch sizes per context length (per GPU)
-# Reduced batch sizes for ZeRO-3 without gradient checkpointing
 BATCH_SIZE_PER_PHASE = {
     4096: 2,
     16384: 1,
