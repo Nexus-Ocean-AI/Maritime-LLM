@@ -100,8 +100,8 @@ OUTPUT_DIR = "qwen-maritime-longcontext-cpt"
 PROGRESSIVE_TRAINING = True
 CONTEXT_SCHEDULE = [
     {"name": "Phase_1a_Short", "max_seq_length": 2048, "num_epochs": 4},    # 1 epoch at 2K - Fast domain learning
-    {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 3},  # 2 epochs at 16K - Medium context
-    {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 3},    # 4 epochs at 32K - Master long context
+    {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 1},  # 2 epochs at 16K - Medium context
+    {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 1},    # 4 epochs at 32K - Master long context
 ]
 
 # Resume Training from Checkpoint
