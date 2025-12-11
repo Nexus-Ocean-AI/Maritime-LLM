@@ -80,7 +80,7 @@ OUTPUT_DIR = "qwen3-30b-maritime-longcontext-cpt"
 # This ensures the model learns both short-range and long-range patterns in all documents
 PROGRESSIVE_TRAINING = True
 CONTEXT_SCHEDULE = [
-    {"name": "Phase_1a_Short", "max_seq_length": 2048, "num_epochs": 4},    # 1 epoch at 2K - Fast domain learning
+    {"name": "Phase_1a_Short", "max_seq_length": 4096, "num_epochs": 4},    # 1 epoch at 2K - Fast domain learning
     {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 3},  # 2 epochs at 16K - Medium context
     {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 3},    # 4 epochs at 32K - Master long context
 ]
@@ -96,17 +96,17 @@ LORA_R = 64  # Reduced from 128 to save memory (still effective for domain adapt
 LORA_ALPHA = 128  # 2x rank as recommended
 LORA_DROPOUT = 0.05
 
-# Training Hyperparameters - MEMORY OPTIMIZED for 30B model
+# Training Hyperparameters - OPTIMIZED for single H100
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    2048: 1,      # Reduced for memory (use grad accumulation for effective batch)
-    16384: 1,     # Reduced for memory
-    32768: 1,     # Reduced for memory
+    4096: 2,      # Increased for single GPU (H100 can handle this)
+    16384: 1,     # Keep at 1 for longer context
+    32768: 1,     # Keep at 1 for longest context
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    2048: 8,      # Increased to maintain effective batch size
-    16384: 16,    # Increased to maintain effective batch size
-    32768: 32,    # Increased to maintain effective batch size
+    4096: 4,      # Lower since batch size is larger
+    16384: 8,     # Maintain effective batch size
+    32768: 16,    # Maintain effective batch size
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 500  # Save less frequently to reduce I/O overhead
@@ -126,11 +126,11 @@ USE_8BIT = True  # Using 8-bit quantization with bitsandbytes
 USE_CPU_OFFLOAD = True  # Offload optimizer states to CPU
 USE_DISK_OFFLOAD = False  # Set True if still OOM (slower but more memory)
 
-# Performance Optimizations for H100
+# Performance Optimizations for single H100
 USE_TORCH_COMPILE = False  # Keep disabled - incompatible with gradient checkpointing + LoRA
-DATALOADER_WORKERS = 8  # Parallel data loading
+DATALOADER_WORKERS = 4  # Reduced from 8 - fewer workers to reduce CPU bottleneck
 DATALOADER_PIN_MEMORY = True  # Pin memory for faster GPU transfer
-DATALOADER_PREFETCH = 4  # Prefetch batches
+DATALOADER_PREFETCH = 2  # Reduced from 4 to avoid memory pressure
 os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation
 os.environ['TOKENIZERS_PARALLELISM'] = 'true'  # Parallel tokenization
 
@@ -327,8 +327,11 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     print(f"  Total Tokens: {total_tokens:,.0f}")
     print(f"  Tokens/Step: {batch_size * grad_accum * seq_length:,}\n")
     
-    # Determine dtype
-    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() or torch.backends.mps.is_available() else torch.float16
+    # Determine dtype - Force FP16 for 8-bit to avoid casting overhead
+    if USE_8BIT or USE_4BIT:
+        dtype = torch.float16  # Match bitsandbytes compute dtype
+    else:
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     
     # Clear GPU cache before training
     if torch.cuda.is_available():
@@ -349,7 +352,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         save_total_limit=SAVE_TOTAL_LIMIT,
         bf16=(dtype == torch.bfloat16),
         fp16=(dtype == torch.float16),
-        optim="paged_adamw_8bit" if (USE_4BIT or USE_8BIT) else "adamw_torch",  # Memory-efficient optimizer
+        optim="adamw_8bit" if (USE_4BIT or USE_8BIT) else "adamw_torch",  # 8-bit optimizer (non-paged for speed)
         lr_scheduler_type="cosine",
         warmup_ratio=WARMUP_RATIO,
         logging_dir=f"{output_dir}/logs",
@@ -407,10 +410,12 @@ def main():
     dataset = load_and_mix_data()
     print(f"\nTotal dataset size: {len(dataset)} examples")
     
-    # 3. Load Model with 8-bit Quantization
-    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() or torch.backends.mps.is_available() else torch.float16
+    # 3. Load Model with 8-bit Quantization (OPTIMIZED for single H100)
+    # CRITICAL: Use FP16 for both training AND compute to avoid dtype casting overhead
+    dtype = torch.float16  # Force FP16 to match bitsandbytes compute dtype
     
-    print(f"\nLoading model with 8-bit quantization using bitsandbytes...")
+    print(f"\nLoading model with 8-bit quantization...")
+    print(f"Using dtype: {dtype} (FP16 for zero casting overhead)")
     model_kwargs = {
         "device_map": "auto",
         "trust_remote_code": True,
