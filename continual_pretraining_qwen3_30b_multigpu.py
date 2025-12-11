@@ -449,16 +449,28 @@ def main():
     if accelerator.is_main_process:
         print(f"\n🔧 Loading model: {MODEL_ID}")
     
-    # Load model with SDPA
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-        trust_remote_code=True,
-        use_cache=False,
-        device_map=None,  # Let DeepSpeed handle device placement
-        low_cpu_mem_usage=True,  # Better initialization for DeepSpeed ZeRO-3
-    )
+    # Load model with DeepSpeed ZeRO-3 initialization
+    # This ensures parameters are sharded from the start, not loaded fully then sharded
+    import deepspeed
+    
+    ds_config = {
+        "train_micro_batch_size_per_gpu": 1,
+        "bf16": {"enabled": True},
+        "zero_optimization": {
+            "stage": 3,
+            "offload_param": {"device": "cpu", "pin_memory": True},
+            "offload_optimizer": {"device": "cpu", "pin_memory": True},
+        }
+    }
+    
+    with deepspeed.zero.Init(config_dict_or_path=ds_config):
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID,
+            torch_dtype=torch.bfloat16,
+            attn_implementation="sdpa",
+            trust_remote_code=True,
+            use_cache=False,
+        )
     
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
     if tokenizer.pad_token is None:
