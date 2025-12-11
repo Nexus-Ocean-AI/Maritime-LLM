@@ -11,7 +11,8 @@ from transformers import (
     Trainer,
     TrainingArguments,
     DataCollatorForLanguageModeling,
-    TrainerCallback
+    TrainerCallback,
+    BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
 
@@ -70,7 +71,7 @@ class EnhancedProgressCallback(TrainerCallback):
 # Configuration - Epoch-Based Progressive Long Context Training (32K Target)
 # -----------------------------------------------------------------------------
 # MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"  # 128K native context window
-MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"  # 128K native context window
+MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct-2507"  # 128K native context window
 DATA_DIR = "data"
 OUTPUT_DIR = "qwen3-30b-maritime-longcontext-cpt"
 
@@ -120,7 +121,7 @@ REPLAY_RATIO = 0.15
 # Memory Optimization - ENABLE Flash Attention!
 USE_FLASH_ATTENTION_2 = True  # 2-4x speedup! Install: pip install flash-attn --no-build-isolation
 USE_SDPA_FALLBACK = True  # Use PyTorch SDPA if Flash Attention not available
-USE_8BIT = False  # Set True if OOM errors occur
+USE_8BIT = True  # Using 8-bit quantization with bitsandbytes
 
 # Performance Optimizations for H100
 USE_TORCH_COMPILE = False  # Keep disabled - incompatible with gradient checkpointing + LoRA
@@ -394,16 +395,28 @@ def main():
     dataset = load_and_mix_data()
     print(f"\nTotal dataset size: {len(dataset)} examples")
     
-    # 3. Load Model
+    # 3. Load Model with 8-bit Quantization
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() or torch.backends.mps.is_available() else torch.float16
     
-    print(f"\nLoading model in {dtype}...")
+    print(f"\nLoading model with 8-bit quantization using bitsandbytes...")
     model_kwargs = {
         "device_map": "auto",
-        "torch_dtype": dtype,
         "trust_remote_code": True,
         "use_cache": False,
     }
+    
+    # Configure 8-bit quantization
+    if USE_8BIT:
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            bnb_8bit_compute_dtype=dtype,
+            bnb_8bit_use_double_quant=True,  # Double quantization for extra memory savings
+            bnb_8bit_quant_type="nf8"  # Use NF8 quantization for better quality
+        )
+        model_kwargs["quantization_config"] = quantization_config
+        print("✅ Using 8-bit quantization with double quantization and NF8 format")
+    else:
+        model_kwargs["torch_dtype"] = dtype
     
     # Try Flash Attention 2 first, fallback to SDPA (PyTorch 2.0+)
     if USE_FLASH_ATTENTION_2:
@@ -421,10 +434,6 @@ def main():
     elif USE_SDPA_FALLBACK:
         model_kwargs["attn_implementation"] = "sdpa"
         print("✅ Using SDPA (PyTorch native) for faster attention")
-    
-    if USE_8BIT:
-        model_kwargs["load_in_8bit"] = True
-        print("Loading in 8-bit mode for reduced memory")
     
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
     
