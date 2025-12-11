@@ -69,9 +69,10 @@ class EnhancedProgressCallback(TrainerCallback):
 # -----------------------------------------------------------------------------
 # Configuration - Epoch-Based Progressive Long Context Training (32K Target)
 # -----------------------------------------------------------------------------
-MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"  # 128K native context window
+# MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"  # 128K native context window
+MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct-2507"  # 128K native context window
 DATA_DIR = "data"
-OUTPUT_DIR = "qwen-maritime-longcontext-cpt"
+OUTPUT_DIR = "qwen3-30b-maritime-longcontext-cpt"
 
 # Epoch-Based Progressive Context Schedule
 # Each phase trains on the ENTIRE dataset for N epochs at a specific sequence length
@@ -84,14 +85,14 @@ CONTEXT_SCHEDULE = [
 ]
 
 # Or set single length for direct training (NOT RECOMMENDED for 32K)
-SINGLE_MAX_SEQ_LENGTH = 32768  # Only used if PROGRESSIVE_TRAINING = False
+SINGLE_MAX_SEQ_LENGTH = 131072  # Only used if PROGRESSIVE_TRAINING = False
 
 # TRAINING MODE
 USE_LORA = True  # Must be True for 32K training on consumer hardware
 
 # LoRA Config - Optimized for Long Context
-LORA_R = 64
-LORA_ALPHA = 128
+LORA_R = 128
+LORA_ALPHA = 256
 LORA_DROPOUT = 0.05
 
 # Training Hyperparameters - OPTIMIZED for H100 Speed
@@ -104,7 +105,7 @@ BATCH_SIZE_PER_PHASE = {
 GRAD_ACCUMULATION_PER_PHASE = {
     2048: 4,      # Original optimized value
     16384: 8,     # Original optimized value
-    32768: 16,    # Original optimized value
+    32768: 8,    # Original optimized value
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 500  # Save less frequently to reduce I/O overhead
