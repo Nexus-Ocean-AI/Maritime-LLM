@@ -1,3 +1,18 @@
+"""
+Progressive Long-Context Continual Pre-Training Script
+Supports checkpoint resumption for multi-phase training.
+
+To resume training from a checkpoint:
+1. Set START_FROM_PHASE to the phase number you want to start from (e.g., 2 for Phase_1b_Medium)
+2. Ensure the checkpoint from the previous phase exists in qwen-maritime-longcontext-cpt/
+3. Run the script - it will automatically load the checkpoint and continue training
+
+Example:
+    START_FROM_PHASE = 1  # Start from scratch
+    START_FROM_PHASE = 2  # Resume from Phase_1b_Medium (loads Phase_1a_Short checkpoint)
+    START_FROM_PHASE = 3  # Resume from Phase_1c_Long (loads Phase_1b_Medium checkpoint)
+"""
+
 import os
 import glob
 import math
@@ -63,7 +78,13 @@ class EnhancedProgressCallback(TrainerCallback):
         total_time_str = str(timedelta(seconds=int(total_time)))
         print(f"\n\n✅ {self.phase_name} Complete!")
         print(f"⏱️  Phase training time: {total_time_str}")
-        print(f"📊 Final loss: {state.log_history[-1].get('loss', 'N/A'):.4f}")
+        
+        # Get final loss, handle case where it might be 'N/A'
+        final_loss = state.log_history[-1].get('loss', 'N/A')
+        if isinstance(final_loss, (int, float)):
+            print(f"📊 Final loss: {final_loss:.4f}")
+        else:
+            print(f"📊 Final loss: {final_loss}")
         print(f"{'='*80}\n")
 
 # -----------------------------------------------------------------------------
@@ -82,6 +103,10 @@ CONTEXT_SCHEDULE = [
     {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 3},  # 2 epochs at 16K - Medium context
     {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 3},    # 4 epochs at 32K - Master long context
 ]
+
+# Resume Training from Checkpoint
+# Set to 1 to start from scratch, 2 to start from Phase_1b_Medium (after Phase_1a_Short), etc.
+START_FROM_PHASE = 1  # Change to 2 to skip Phase_1a_Short and load its checkpoint
 
 # Or set single length for direct training (NOT RECOMMENDED for 32K)
 SINGLE_MAX_SEQ_LENGTH = 32768  # Only used if PROGRESSIVE_TRAINING = False
@@ -393,58 +418,135 @@ def main():
     dataset = load_and_mix_data()
     print(f"\nTotal dataset size: {len(dataset)} examples")
     
-    # 3. Load Model
+    # 3. Load Model or Resume from Checkpoint
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() or torch.backends.mps.is_available() else torch.float16
     
-    print(f"\nLoading model in {dtype}...")
-    model_kwargs = {
-        "device_map": "auto",
-        "torch_dtype": dtype,
-        "trust_remote_code": True,
-        "use_cache": False,
-    }
-    
-    # Try Flash Attention 2 first, fallback to SDPA (PyTorch 2.0+)
-    if USE_FLASH_ATTENTION_2:
-        try:
-            import flash_attn
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            print("✅ Using Flash Attention 2 for maximum speed")
-        except ImportError:
-            if USE_SDPA_FALLBACK:
-                model_kwargs["attn_implementation"] = "sdpa"
-                print("⚠️ Flash Attention not installed, using SDPA (PyTorch native) - still faster than default!")
-                print("   For best performance, install: pip install flash-attn --no-build-isolation")
-            else:
-                print("⚠️ Flash Attention not installed, using default attention")
-    elif USE_SDPA_FALLBACK:
-        model_kwargs["attn_implementation"] = "sdpa"
-        print("✅ Using SDPA (PyTorch native) for faster attention")
-    
-    if USE_8BIT:
-        model_kwargs["load_in_8bit"] = True
-        print("Loading in 8-bit mode for reduced memory")
-    
-    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
-    
-    # 4. Apply LoRA
-    if USE_LORA:
-        if USE_8BIT:
-            model = prepare_model_for_kbit_training(model)
+    # Check if we're resuming from a checkpoint
+    if START_FROM_PHASE > 1:
+        # Load from the previous phase's checkpoint
+        previous_phase_idx = START_FROM_PHASE - 2  # 0-indexed
+        previous_phase_name = CONTEXT_SCHEDULE[previous_phase_idx]["name"]
+        checkpoint_path = f"{OUTPUT_DIR}/{previous_phase_name}"
         
-        peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            inference_mode=False,
-            r=LORA_R,
-            lora_alpha=LORA_ALPHA,
-            lora_dropout=LORA_DROPOUT,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-        )
-        model = get_peft_model(model, peft_config)
-        model.print_trainable_parameters()
+        print(f"\n🔄 Resuming from checkpoint: {checkpoint_path}")
+        print(f"📂 Skipping phases 1-{START_FROM_PHASE-1}, starting from phase {START_FROM_PHASE}\n")
+        
+        if not os.path.exists(checkpoint_path):
+            raise ValueError(f"Checkpoint not found: {checkpoint_path}\n"
+                           f"Please ensure Phase {START_FROM_PHASE-1} ({previous_phase_name}) completed successfully.")
+        
+        print(f"Loading model from checkpoint in {dtype}...")
+        
+        # Load the base model first
+        model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": dtype,
+            "trust_remote_code": True,
+            "use_cache": False,
+        }
+        
+        # Try Flash Attention 2 first, fallback to SDPA (PyTorch 2.0+)
+        if USE_FLASH_ATTENTION_2:
+            try:
+                import flash_attn
+                model_kwargs["attn_implementation"] = "flash_attention_2"
+                print("✅ Using Flash Attention 2 for maximum speed")
+            except ImportError:
+                if USE_SDPA_FALLBACK:
+                    model_kwargs["attn_implementation"] = "sdpa"
+                    print("⚠️ Flash Attention not installed, using SDPA (PyTorch native) - still faster than default!")
+                    print("   For best performance, install: pip install flash-attn --no-build-isolation")
+                else:
+                    print("⚠️ Flash Attention not installed, using default attention")
+        elif USE_SDPA_FALLBACK:
+            model_kwargs["attn_implementation"] = "sdpa"
+            print("✅ Using SDPA (PyTorch native) for faster attention")
+        
+        if USE_8BIT:
+            model_kwargs["load_in_8bit"] = True
+            print("Loading in 8-bit mode for reduced memory")
+        
+        # Load base model
+        model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
+        
+        # Apply LoRA configuration
+        if USE_LORA:
+            if USE_8BIT:
+                model = prepare_model_for_kbit_training(model)
+            
+            peft_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                inference_mode=False,
+                r=LORA_R,
+                lora_alpha=LORA_ALPHA,
+                lora_dropout=LORA_DROPOUT,
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            )
+            model = get_peft_model(model, peft_config)
+            
+            # Load the checkpoint weights
+            from peft import PeftModel
+            print(f"Loading LoRA adapter from {checkpoint_path}...")
+            model = PeftModel.from_pretrained(model.base_model.model, checkpoint_path)
+            model.print_trainable_parameters()
+        else:
+            # For full fine-tuning, load the entire model from checkpoint
+            model = AutoModelForCausalLM.from_pretrained(checkpoint_path, **model_kwargs)
+            model.gradient_checkpointing_enable()
+        
+        print(f"✅ Successfully loaded checkpoint from {previous_phase_name}\n")
+        
     else:
-        print("WARNING: Full fine-tuning at 32K context requires 200GB+ VRAM")
-        model.gradient_checkpointing_enable()
+        # Starting from scratch
+        print(f"\nLoading fresh model in {dtype}...")
+        model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": dtype,
+            "trust_remote_code": True,
+            "use_cache": False,
+        }
+        
+        # Try Flash Attention 2 first, fallback to SDPA (PyTorch 2.0+)
+        if USE_FLASH_ATTENTION_2:
+            try:
+                import flash_attn
+                model_kwargs["attn_implementation"] = "flash_attention_2"
+                print("✅ Using Flash Attention 2 for maximum speed")
+            except ImportError:
+                if USE_SDPA_FALLBACK:
+                    model_kwargs["attn_implementation"] = "sdpa"
+                    print("⚠️ Flash Attention not installed, using SDPA (PyTorch native) - still faster than default!")
+                    print("   For best performance, install: pip install flash-attn --no-build-isolation")
+                else:
+                    print("⚠️ Flash Attention not installed, using default attention")
+        elif USE_SDPA_FALLBACK:
+            model_kwargs["attn_implementation"] = "sdpa"
+            print("✅ Using SDPA (PyTorch native) for faster attention")
+        
+        if USE_8BIT:
+            model_kwargs["load_in_8bit"] = True
+            print("Loading in 8-bit mode for reduced memory")
+        
+        model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
+        
+        # 4. Apply LoRA
+        if USE_LORA:
+            if USE_8BIT:
+                model = prepare_model_for_kbit_training(model)
+            
+            peft_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                inference_mode=False,
+                r=LORA_R,
+                lora_alpha=LORA_ALPHA,
+                lora_dropout=LORA_DROPOUT,
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            )
+            model = get_peft_model(model, peft_config)
+            model.print_trainable_parameters()
+        else:
+            print("WARNING: Full fine-tuning at 32K context requires 200GB+ VRAM")
+            model.gradient_checkpointing_enable()
     
     # Compile model for H100 speedup (PyTorch 2.0+)
     if USE_TORCH_COMPILE and hasattr(torch, 'compile'):
@@ -456,6 +558,11 @@ def main():
     # 5. Progressive Training
     if PROGRESSIVE_TRAINING:
         for phase_num, phase_config in enumerate(CONTEXT_SCHEDULE, 1):
+            # Skip phases that were already completed
+            if phase_num < START_FROM_PHASE:
+                print(f"⏭️  Skipping {phase_config['name']} (already completed)")
+                continue
+                
             model = train_phase(
                 model=model,
                 tokenizer=tokenizer,
