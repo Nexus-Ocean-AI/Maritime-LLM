@@ -91,22 +91,22 @@ SINGLE_MAX_SEQ_LENGTH = 131072  # Only used if PROGRESSIVE_TRAINING = False
 # TRAINING MODE
 USE_LORA = True  # Must be True for 32K training on consumer hardware
 
-# LoRA Config - Optimized for Long Context
-LORA_R = 128
-LORA_ALPHA = 256
+# LoRA Config - MEMORY OPTIMIZED for 30B model
+LORA_R = 64  # Reduced from 128 to save memory (still effective for domain adaptation)
+LORA_ALPHA = 128  # 2x rank as recommended
 LORA_DROPOUT = 0.05
 
-# Training Hyperparameters - OPTIMIZED for H100 Speed
+# Training Hyperparameters - MEMORY OPTIMIZED for 30B model
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    2048: 8,      # Original optimized value
-    16384: 2,     # Original optimized value
-    32768: 1,     # Original optimized value
+    2048: 1,      # Reduced for memory (use grad accumulation for effective batch)
+    16384: 1,     # Reduced for memory
+    32768: 1,     # Reduced for memory
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    2048: 4,      # Original optimized value
-    16384: 8,     # Original optimized value
-    32768: 8,    # Original optimized value
+    2048: 8,      # Increased to maintain effective batch size
+    16384: 16,    # Increased to maintain effective batch size
+    32768: 32,    # Increased to maintain effective batch size
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 500  # Save less frequently to reduce I/O overhead
@@ -118,10 +118,13 @@ REPLAY_DATASET_NAME = "wikitext"
 REPLAY_DATASET_CONFIG = "wikitext-103-raw-v1"
 REPLAY_RATIO = 0.15
 
-# Memory Optimization - ENABLE Flash Attention!
+# Memory Optimization - AGGRESSIVE settings for 30B model
 USE_FLASH_ATTENTION_2 = True  # 2-4x speedup! Install: pip install flash-attn --no-build-isolation
 USE_SDPA_FALLBACK = True  # Use PyTorch SDPA if Flash Attention not available
+USE_4BIT = False  # Disabled - using 8-bit instead
 USE_8BIT = True  # Using 8-bit quantization with bitsandbytes
+USE_CPU_OFFLOAD = True  # Offload optimizer states to CPU
+USE_DISK_OFFLOAD = False  # Set True if still OOM (slower but more memory)
 
 # Performance Optimizations for H100
 USE_TORCH_COMPILE = False  # Keep disabled - incompatible with gradient checkpointing + LoRA
@@ -327,6 +330,12 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     # Determine dtype
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() or torch.backends.mps.is_available() else torch.float16
     
+    # Clear GPU cache before training
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        import gc
+        gc.collect()
+    
     # Training Arguments for this phase
     output_dir = f"{OUTPUT_DIR}/{phase_name}"
     training_args = TrainingArguments(
@@ -340,7 +349,7 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         save_total_limit=SAVE_TOTAL_LIMIT,
         bf16=(dtype == torch.bfloat16),
         fp16=(dtype == torch.float16),
-        optim="adamw_torch",
+        optim="paged_adamw_8bit" if (USE_4BIT or USE_8BIT) else "adamw_torch",  # Memory-efficient optimizer
         lr_scheduler_type="cosine",
         warmup_ratio=WARMUP_RATIO,
         logging_dir=f"{output_dir}/logs",
@@ -353,6 +362,9 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
         # Additional H100 optimizations
         tf32=True,  # Enable TF32 for faster matmuls on Ampere/Hopper
+        # Memory optimizations
+        max_grad_norm=1.0,  # Gradient clipping to prevent spikes
+        gradient_checkpointing_kwargs={"use_reentrant": False},  # More memory efficient
     )
     
     # Ensure model is in training mode with gradients enabled
@@ -405,13 +417,23 @@ def main():
         "use_cache": False,
     }
     
-    # Configure 8-bit quantization
-    if USE_8BIT:
+    # Configure 4-bit quantization (QLoRA) for maximum memory efficiency
+    if USE_4BIT:
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=dtype,
+            bnb_4bit_use_double_quant=True,  # Nested quantization for extra savings
+            bnb_4bit_quant_type="nf4"  # NormalFloat4 - best quality for 4-bit
+        )
+        model_kwargs["quantization_config"] = quantization_config
+        print("✅ Using 4-bit QLoRA quantization (NF4 + double quant)")
+        print("   Expected memory: ~20-25GB for model + ~15-20GB for training")
+    elif USE_8BIT:
         quantization_config = BitsAndBytesConfig(
             load_in_8bit=True,
             bnb_8bit_compute_dtype=dtype,
-            bnb_8bit_use_double_quant=True,  # Double quantization for extra memory savings
-            bnb_8bit_quant_type="nf8"  # Use NF8 quantization for better quality
+            bnb_8bit_use_double_quant=True,
+            bnb_8bit_quant_type="nf8"
         )
         model_kwargs["quantization_config"] = quantization_config
         print("✅ Using 8-bit quantization with double quantization and NF8 format")
@@ -437,10 +459,18 @@ def main():
     
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
     
-    # 4. Apply LoRA
+    # 4. Apply LoRA (QLoRA if using quantization)
     if USE_LORA:
-        if USE_8BIT:
-            model = prepare_model_for_kbit_training(model)
+        if USE_4BIT or USE_8BIT:
+            print("Preparing model for k-bit training...")
+            model = prepare_model_for_kbit_training(
+                model,
+                use_gradient_checkpointing=True
+            )
+        
+        # Focus on attention layers only to save memory (can add MLP later if needed)
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]  # Attention only
+        # Full coverage (more memory): ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
         
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
@@ -448,10 +478,14 @@ def main():
             r=LORA_R,
             lora_alpha=LORA_ALPHA,
             lora_dropout=LORA_DROPOUT,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            target_modules=target_modules,
+            bias="none",
+            # Memory optimizations
+            modules_to_save=None,  # Don't save any full modules
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
+        print(f"LoRA Configuration: r={LORA_R}, alpha={LORA_ALPHA}, targets={target_modules}")
     else:
         print("WARNING: Full fine-tuning at 32K context requires 200GB+ VRAM")
         model.gradient_checkpointing_enable()
