@@ -99,12 +99,12 @@ LORA_DROPOUT = 0.05
 # Training Hyperparameters - OPTIMIZED for single H100
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
-    4096: 2,      # Increased for single GPU (H100 can handle this)
+    4096: 1,      # Reduced to 1 - batch_size=2 causes OOM during logits computation
     16384: 1,     # Keep at 1 for longer context
     32768: 1,     # Keep at 1 for longest context
 }
 GRAD_ACCUMULATION_PER_PHASE = {
-    4096: 4,      # Lower since batch size is larger
+    4096: 8,      # Increased to maintain effective batch size (was 4)
     16384: 8,     # Maintain effective batch size
     32768: 16,    # Maintain effective batch size
 }
