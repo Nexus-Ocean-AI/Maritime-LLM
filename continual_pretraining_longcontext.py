@@ -70,7 +70,7 @@ class EnhancedProgressCallback(TrainerCallback):
 # Configuration - Epoch-Based Progressive Long Context Training (32K Target)
 # -----------------------------------------------------------------------------
 # MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"  # 128K native context window
-MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct-2507"  # 128K native context window
+MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"  # 128K native context window
 DATA_DIR = "data"
 OUTPUT_DIR = "qwen3-30b-maritime-longcontext-cpt"
 
