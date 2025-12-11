@@ -80,9 +80,9 @@ OUTPUT_DIR = "qwen3-30b-maritime-longcontext-cpt"
 # This ensures the model learns both short-range and long-range patterns in all documents
 PROGRESSIVE_TRAINING = True
 CONTEXT_SCHEDULE = [
-    {"name": "Phase_1a_Short", "max_seq_length": 4096, "num_epochs": 4},    # 1 epoch at 2K - Fast domain learning
-    {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 3},  # 2 epochs at 16K - Medium context
-    {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 3},    # 4 epochs at 32K - Master long context
+    {"name": "Phase_1a_Short", "max_seq_length": 4096, "num_epochs": 2},    # Reduced from 4 to 2 for faster iteration
+    {"name": "Phase_1b_Medium", "max_seq_length": 16384, "num_epochs": 2},  # Reduced from 3 to 2
+    {"name": "Phase_1c_Long", "max_seq_length": 32768, "num_epochs": 2},    # Reduced from 3 to 2
 ]
 
 # Or set single length for direct training (NOT RECOMMENDED for 32K)
@@ -109,8 +109,8 @@ GRAD_ACCUMULATION_PER_PHASE = {
     32768: 16,    # Maintain effective batch size
 }
 WARMUP_RATIO = 0.03
-SAVE_STEPS = 500  # Save less frequently to reduce I/O overhead
-LOGGING_STEPS = 50  # Log less frequently to reduce overhead
+SAVE_STEPS = 1000  # Increased to reduce I/O overhead
+LOGGING_STEPS = 100  # Increased to reduce logging overhead (was 50)
 SAVE_TOTAL_LIMIT = None  # Keep only last 3 checkpoints to save disk I/O
 
 # Replay Buffer
@@ -131,8 +131,8 @@ USE_TORCH_COMPILE = False  # Keep disabled - incompatible with gradient checkpoi
 DATALOADER_WORKERS = 4  # Reduced from 8 - fewer workers to reduce CPU bottleneck
 DATALOADER_PIN_MEMORY = True  # Pin memory for faster GPU transfer
 DATALOADER_PREFETCH = 2  # Reduced from 4 to avoid memory pressure
-os.environ['PYTORCH_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation
-os.environ['TOKENIZERS_PARALLELISM'] = 'true'  # Parallel tokenization
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Reduce memory fragmentation
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # Disable to avoid CPU contention
 
 def find_all_data_files(data_dir):
     """Finds all jsonl files in the data directory."""
@@ -379,7 +379,11 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
         model=model,
         args=training_args,
         train_dataset=packed_dataset,
-        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        data_collator=DataCollatorForLanguageModeling(
+            tokenizer, 
+            mlm=False,
+            pad_to_multiple_of=8,  # Optimize for tensor cores
+        ),
         callbacks=[EnhancedProgressCallback(phase_num, total_phases, phase_name)]
     )
     
@@ -463,6 +467,14 @@ def main():
         print("✅ Using SDPA (PyTorch native) for faster attention")
     
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **model_kwargs)
+    
+    # CRITICAL: Force embeddings and lm_head to fp16 to eliminate float32 casting
+    if USE_8BIT or USE_4BIT:
+        print("Converting embeddings and lm_head to fp16 to eliminate casting overhead...")
+        if hasattr(model, 'model') and hasattr(model.model, 'embed_tokens'):
+            model.model.embed_tokens = model.model.embed_tokens.to(torch.float16)
+        if hasattr(model, 'lm_head'):
+            model.lm_head = model.lm_head.to(torch.float16)
     
     # 4. Apply LoRA (QLoRA if using quantization)
     if USE_LORA:
