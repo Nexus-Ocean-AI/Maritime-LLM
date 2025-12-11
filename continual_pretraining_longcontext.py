@@ -395,9 +395,19 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     print(f"Monitor: tensorboard --logdir {output_dir}/logs\n")
     trainer.train()
     
-    # Save phase checkpoint
-    print(f"Saving Phase {phase_num} checkpoint...")
-    trainer.save_model(output_dir)
+    # Save phase checkpoint - ensure adapter files are in the main output_dir
+    print(f"Saving Phase {phase_num} checkpoint to {output_dir}...")
+    
+    # For LoRA models, explicitly save the adapter to the output directory
+    if hasattr(model, 'save_pretrained'):
+        model.save_pretrained(output_dir)
+        print(f"✅ LoRA adapter saved to {output_dir}")
+    else:
+        trainer.save_model(output_dir)
+        print(f"✅ Model saved to {output_dir}")
+    
+    # Also save tokenizer for convenience
+    tokenizer.save_pretrained(output_dir)
     
     return model
 
@@ -434,6 +444,24 @@ def main():
         if not os.path.exists(checkpoint_path):
             raise ValueError(f"Checkpoint not found: {checkpoint_path}\n"
                            f"Please ensure Phase {START_FROM_PHASE-1} ({previous_phase_name}) completed successfully.")
+        
+        # Check if adapter_config.json exists in the main directory
+        # If not, find the latest checkpoint subdirectory
+        adapter_config_path = os.path.join(checkpoint_path, "adapter_config.json")
+        if not os.path.exists(adapter_config_path):
+            print(f"⚠️  adapter_config.json not found in {checkpoint_path}")
+            print(f"🔍 Looking for latest checkpoint subdirectory...")
+            
+            # Find all checkpoint-* subdirectories
+            checkpoint_dirs = glob.glob(os.path.join(checkpoint_path, "checkpoint-*"))
+            if not checkpoint_dirs:
+                raise ValueError(f"No checkpoint subdirectories found in {checkpoint_path}\n"
+                               f"Expected format: checkpoint-XXXX")
+            
+            # Sort by checkpoint number and get the latest
+            checkpoint_dirs.sort(key=lambda x: int(x.split('-')[-1]))
+            checkpoint_path = checkpoint_dirs[-1]
+            print(f"✅ Found latest checkpoint: {checkpoint_path}")
         
         print(f"Loading model from checkpoint in {dtype}...")
         
