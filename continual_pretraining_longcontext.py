@@ -106,7 +106,7 @@ CONTEXT_SCHEDULE = [
 
 # Resume Training from Checkpoint
 # Set to 1 to start from scratch, 2 to start from Phase_1b_Medium (after Phase_1a_Short), etc.
-START_FROM_PHASE = 1  # Change to 2 to skip Phase_1a_Short and load its checkpoint
+START_FROM_PHASE = 2  # Change to 2 to skip Phase_1a_Short and load its checkpoint
 
 # Or set single length for direct training (NOT RECOMMENDED for 32K)
 SINGLE_MAX_SEQ_LENGTH = 32768  # Only used if PROGRESSIVE_TRAINING = False
