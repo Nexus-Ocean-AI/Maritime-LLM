@@ -123,13 +123,13 @@ LORA_DROPOUT = 0.05
 LEARNING_RATE = 1e-4
 BATCH_SIZE_PER_PHASE = {
     2048: 8,      # Original optimized value
-    16384: 2,     # Original optimized value
-    32768: 1,     # Original optimized value
+    16384: 1,     # Reduced from 2 to prevent OOM when loading from checkpoint
+    32768: 1,     # Keep at 1 (maximum memory usage)
 }
 GRAD_ACCUMULATION_PER_PHASE = {
     2048: 4,      # Original optimized value
-    16384: 8,     # Original optimized value
-    32768: 16,    # Original optimized value
+    16384: 16,    # Increased from 8 to compensate for batch size reduction
+    32768: 16,    # Increased from 16 to maintain effective batch size
 }
 WARMUP_RATIO = 0.03
 SAVE_STEPS = 500  # Save less frequently to reduce I/O overhead
@@ -144,7 +144,7 @@ REPLAY_RATIO = 0.15
 # Memory Optimization - ENABLE Flash Attention!
 USE_FLASH_ATTENTION_2 = True  # 2-4x speedup! Install: pip install flash-attn --no-build-isolation
 USE_SDPA_FALLBACK = True  # Use PyTorch SDPA if Flash Attention not available
-USE_8BIT = False  # Set True if OOM errors occur
+USE_8BIT = True  # Enabled to prevent OOM errors with 16K/32K contexts
 
 # Performance Optimizations for H100
 USE_TORCH_COMPILE = False  # Keep disabled - incompatible with gradient checkpointing + LoRA
@@ -268,6 +268,13 @@ def train_phase(model, tokenizer, dataset, phase_config, phase_num, total_phases
     seq_length = phase_config["max_seq_length"]
     phase_name = phase_config["name"]
     num_epochs = phase_config["num_epochs"]
+    
+    # Clear GPU cache before starting each phase
+    if torch.cuda.is_available():
+        print("\n🧹 Clearing GPU cache before starting new phase...")
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        print(f"✅ GPU memory cleared\n")
     
     print(f"\n{'='*80}")
     print(f"PHASE {phase_num}/{total_phases}: {phase_name}")
@@ -522,7 +529,14 @@ def main():
             model = AutoModelForCausalLM.from_pretrained(checkpoint_path, **model_kwargs)
             model.gradient_checkpointing_enable()
         
-        print(f"✅ Successfully loaded checkpoint from {previous_phase_name}\n")
+        print(f"✅ Successfully loaded checkpoint from {previous_phase_name}")
+        
+        # Clear GPU cache after loading checkpoint to free fragmented memory
+        if torch.cuda.is_available():
+            print("🧹 Clearing GPU cache after checkpoint load...")
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            print(f"✅ GPU memory cleared\n")
         
     else:
         # Starting from scratch
