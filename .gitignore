@@ -1,0 +1,9 @@
+# Ignore specific folders
+data/
+qwen-maritime-longcontext-cpt/
+qwen-maritime-longcontext-cpt-unsloth/
+unsloth_compiled_cache/
+
+# OPTIONAL: ignore nohup output
+nohup.out
+
