@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 # HuggingFace Configuration
-HF_USERNAME = "YOUR_HF_USERNAME"  # Change this to your HuggingFace username
+HF_USERNAME = "naga080898"  # Change this to your HuggingFace username
 HF_TOKEN = os.getenv("HF_TOKEN")  # Or set token here directly (not recommended for security)
 
 # Adapter Configurations
