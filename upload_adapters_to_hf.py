@@ -1,22 +1,19 @@
 """
-Upload LoRA adapters to HuggingFace Hub.
+Upload LoRA adapters to a single HuggingFace repository: qwen7b-marine
 
-This script uploads trained LoRA adapters from local checkpoint directories
-to HuggingFace Hub for sharing and versioning.
-
-Usage:
-    python upload_adapters_to_hf.py
-
-Prerequisites:
-    1. Install huggingface_hub: pip install huggingface_hub
-    2. Login to HuggingFace: huggingface-cli login
-    3. Or set HF_TOKEN environment variable
+This script uploads multiple local checkpoints into subfolders of a single repository.
+Structure:
+  naga080898/qwen7b-marine/
+    ├── README.md  (Main model card)
+    ├── phase1a-ckpt2157/ (...adapter files...)
+    ├── phase1a-ckpt8628/
+    └── phase1b-ckpt872/
 """
 
 import os
 import logging
 from pathlib import Path
-from huggingface_hub import HfApi, create_repo, upload_folder
+from huggingface_hub import HfApi, create_repo, upload_folder, upload_file
 from typing import Optional
 
 logging.basicConfig(
@@ -29,317 +26,255 @@ logger = logging.getLogger(__name__)
 # Configuration
 # -----------------------------------------------------------------------------
 
-# HuggingFace Configuration
-HF_USERNAME = "naga080898"  # Change this to your HuggingFace username
-HF_TOKEN = os.getenv("HF_TOKEN")  # Or set token here directly (not recommended for security)
+HF_USERNAME = "naga080898"
+REPO_NAME = "qwen7b-marine"
+REPO_ID = f"{HF_USERNAME}/{REPO_NAME}"
 
-# Adapter Configurations
+# Adapters to upload (Checkpoints)
 ADAPTERS = [
-    # Phase 1a - Short Context (4 checkpoints)
+    # Phase 1a - Short Context
     {
-        "name": "qwen-maritime-7b-phase1a-ckpt2157",
+        "subfolder": "phase1a-short-ckpt2157",
         "local_path": "qwen-maritime-longcontext-cpt/Phase_1a_Short/checkpoint-2157",
-        "description": "Qwen 7B Maritime LoRA adapter - Phase 1a Short Context (checkpoint 2157)",
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "context_length": "Short context training phase",
+        "description": "Phase 1a Short Context (2,157 steps)",
         "training_steps": "2157",
-        "tags": ["maritime", "lora", "qwen", "phase1a", "short-context", "checkpoint-2157"]
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "tags": ["maritime", "lora", "phase1a"]
     },
     {
-        "name": "qwen-maritime-7b-phase1a-ckpt4314",
+        "subfolder": "phase1a-short-ckpt4314",
         "local_path": "qwen-maritime-longcontext-cpt/Phase_1a_Short/checkpoint-4314",
-        "description": "Qwen 7B Maritime LoRA adapter - Phase 1a Short Context (checkpoint 4314)",
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "context_length": "Short context training phase",
+        "description": "Phase 1a Short Context (4,314 steps)",
         "training_steps": "4314",
-        "tags": ["maritime", "lora", "qwen", "phase1a", "short-context", "checkpoint-4314"]
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "tags": ["maritime", "lora", "phase1a"]
     },
     {
-        "name": "qwen-maritime-7b-phase1a-ckpt6471",
+        "subfolder": "phase1a-short-ckpt6471",
         "local_path": "qwen-maritime-longcontext-cpt/Phase_1a_Short/checkpoint-6471",
-        "description": "Qwen 7B Maritime LoRA adapter - Phase 1a Short Context (checkpoint 6471)",
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "context_length": "Short context training phase",
+        "description": "Phase 1a Short Context (6,471 steps)",
         "training_steps": "6471",
-        "tags": ["maritime", "lora", "qwen", "phase1a", "short-context", "checkpoint-6471"]
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "tags": ["maritime", "lora", "phase1a"]
     },
     {
-        "name": "qwen-maritime-7b-phase1a-ckpt8628",
+        "subfolder": "phase1a-short-ckpt8628",
         "local_path": "qwen-maritime-longcontext-cpt/Phase_1a_Short/checkpoint-8628",
-        "description": "Qwen 7B Maritime LoRA adapter - Phase 1a Short Context (checkpoint 8628, final)",
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "context_length": "Short context training phase",
+        "description": "Phase 1a Short Context (8,628 steps - Final)",
         "training_steps": "8628",
-        "tags": ["maritime", "lora", "qwen", "phase1a", "short-context", "checkpoint-8628", "final"]
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "tags": ["maritime", "lora", "phase1a", "final"]
     },
     
-    # Phase 1b - Medium Context (1 checkpoint)
+    # Phase 1b - Medium Context
     {
-        "name": "qwen-maritime-7b-phase1b-ckpt872",
+        "subfolder": "phase1b-medium-ckpt872",
         "local_path": "qwen-maritime-longcontext-cpt/Phase_1b_Medium/checkpoint-872",
-        "description": "Qwen 7B Maritime LoRA adapter - Phase 1b Medium Context (checkpoint 872)",
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "context_length": "Medium context training phase",
+        "description": "Phase 1b Medium Context (872 steps)",
         "training_steps": "872",
-        "tags": ["maritime", "lora", "qwen", "phase1b", "medium-context", "checkpoint-872"]
+        "base_model": "Qwen/Qwen2.5-7B-Instruct",
+        "tags": ["maritime", "lora", "phase1b"]
     }
 ]
 
-# Upload Settings
-PRIVATE_REPO = False  # Set to True if you want private repositories
-ALLOW_PATTERNS = [
-    "*.json",
-    "*.safetensors",
-    "*.txt",
-    "*.md",
-    "*.jinja",
-    "merges.txt",
-    "vocab.json"
-]
-IGNORE_PATTERNS = [
-    "optimizer.pt",
-    "scheduler.pt",
-    "rng_state.pth",
-    "trainer_state.json",
-    "training_args.bin"
-]
+# Files to upload/exclude
+ALLOW_PATTERNS = ["*.json", "*.safetensors", "*.txt", "*.md", "*.jinja", "merges.txt", "vocab.json"]
+IGNORE_PATTERNS = ["optimizer.pt", "scheduler.pt", "rng_state.pth", "trainer_state.json", "training_args.bin"]
 
 
-def create_model_card(adapter_config: dict) -> str:
-    """Generate a model card in markdown format."""
-    
-    card = f"""---
-language: en
+def create_subfolder_readme(config: dict) -> str:
+    """Create a README for the specific checkpoint folder."""
+    return f"""---
 license: apache-2.0
 tags:
-{chr(10).join(f'- {tag}' for tag in adapter_config['tags'])}
-base_model: {adapter_config['base_model']}
+{chr(10).join(f'- {tag}' for tag in config['tags'])}
+base_model: {config['base_model']}
 ---
 
-# {adapter_config['name']}
+# {config['description']}
 
-## Model Description
+This is a checkpoint for the **Maritime-LLM** project.
 
-{adapter_config['description']}
-
-This is a LoRA (Low-Rank Adaptation) adapter trained for maritime domain adaptation.
-
-## Base Model
-
-- **Base Model**: `{adapter_config['base_model']}`
-- **Context Length**: {adapter_config['context_length']}
-
-## Training Details
-
-This adapter was trained using:
-- **Training Steps**: {adapter_config.get('training_steps', 'N/A')}
-- Progressive long-context continual pretraining
-- Maritime domain-specific data (papers, books, technical documents)
-- LoRA rank: 16-64 (check adapter_config.json for exact values)
-- Target modules: Attention and MLP layers
+- **Phase**: {config['description']}
+- **Training Steps**: {config['training_steps']}
+- **Base Model**: {config['base_model']}
 
 ## Usage
+
+```python
+from peft import PeftModel
+from transformers import AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained("{config['base_model']}")
+# Load from specific subfolder
+model = PeftModel.from_pretrained(
+    base_model, 
+    "{REPO_ID}",
+    subfolder="{config['subfolder']}"
+)
+```
+"""
+
+def create_root_readme() -> str:
+    """Create the main README for the repository root."""
+    
+    table_rows = []
+    for adapter in ADAPTERS:
+        row = f"| {adapter['description']} | `{adapter['subfolder']}` | {adapter['training_steps']} |"
+        table_rows.append(row)
+    
+    table_md = "\n".join(table_rows)
+
+    return f"""---
+license: apache-2.0
+tags:
+- maritime
+- qwen
+- lora
+- continual-pretraining
+base_model: Qwen/Qwen2.5-7B-Instruct
+layout: model
+---
+
+# Qwen 7B Maritime (Marine) Adapters
+
+This repository contains **LoRA adapters** for the Maritime-LLM project, trained via progressive continual pretraining on maritime domain data.
+
+## 📦 Available Checkpoints
+
+All checkpoints are stored in subfolders within this repository.
+
+| Description | Subfolder Name | Training Steps |
+|-------------|----------------|----------------|
+{table_md}
+
+## 🚀 Usage
+
+You can load any specific checkpoint by specifying the `subfolder` argument.
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-# Load base model
+# 1. Load Base Model
+base_model_id = "Qwen/Qwen2.5-7B-Instruct"
 base_model = AutoModelForCausalLM.from_pretrained(
-    "{adapter_config['base_model']}",
-    torch_dtype="auto",
-    device_map="auto"
+    base_model_id, 
+    device_map="auto", 
+    torch_dtype="auto"
 )
 
-# Load adapter
-model = PeftModel.from_pretrained(base_model, "{HF_USERNAME}/{adapter_config['name']}")
+# 2. Load Specific Adapter Checkpoint
+# Example: Loading Phase 1a Final Checkpoint
+adapter_id = "{REPO_ID}"
+subfolder = "phase1a-short-ckpt8628" 
 
-# Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained("{HF_USERNAME}/{adapter_config['name']}")
+model = PeftModel.from_pretrained(
+    base_model, 
+    adapter_id, 
+    subfolder=subfolder
+)
 
-# Generate
-prompt = "Explain maritime safety protocols for"
+# 3. Inference
+tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+prompt = "Explain the safety procedure for enclosing space entry:"
 inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-outputs = model.generate(**inputs, max_new_tokens=100)
+
+outputs = model.generate(**inputs, max_new_tokens=200)
 print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 ```
 
-## Merging with Base Model
+## Training Phases
 
-To create a standalone model without needing PEFT:
+1. **Phase 1a (Short Context)**: Foundation maritime knowledge training (Short context window).
+2. **Phase 1b (Medium Context)**: Extended context training with longer documents.
 
-```python
-from transformers import AutoModelForCausalLM
-from peft import PeftModel
-
-base_model = AutoModelForCausalLM.from_pretrained("{adapter_config['base_model']}")
-model = PeftModel.from_pretrained(base_model, "{HF_USERNAME}/{adapter_config['name']}")
-merged_model = model.merge_and_unload()
-
-# Save merged model
-merged_model.save_pretrained("./merged-model")
-```
-
-## Citation
-
-If you use this adapter, please cite the Maritime-LLM project.
-
-## License
-
-Apache 2.0
 """
-    
-    return card
-
-
-def upload_adapter_to_hf(
-    adapter_config: dict,
-    hf_token: Optional[str] = None
-) -> None:
-    """
-    Upload a single adapter to HuggingFace Hub.
-    
-    Args:
-        adapter_config: Dictionary with adapter configuration
-        hf_token: HuggingFace API token (optional if already logged in)
-    """
-    
-    local_path = adapter_config["local_path"]
-    repo_name = adapter_config["name"]
-    repo_id = f"{HF_USERNAME}/{repo_name}"
-    
-    logger.info(f"Starting upload for {repo_name}...")
-    
-    # Check if local path exists
-    if not os.path.exists(local_path):
-        logger.error(f"❌ Local path does not exist: {local_path}")
-        logger.error(f"Please ensure the checkpoint directory is available")
-        return
-    
-    try:
-        # Initialize HF API
-        api = HfApi(token=hf_token)
-        
-        # Create repository
-        logger.info(f"Creating repository: {repo_id}")
-        try:
-            create_repo(
-                repo_id=repo_id,
-                private=PRIVATE_REPO,
-                repo_type="model",
-                exist_ok=True,
-                token=hf_token
-            )
-            logger.info(f"✅ Repository created/verified: {repo_id}")
-        except Exception as e:
-            logger.warning(f"Repository might already exist: {e}")
-        
-        # Generate and save model card
-        logger.info("Generating model card...")
-        model_card_content = create_model_card(adapter_config)
-        model_card_path = Path(local_path) / "README.md"
-        
-        # Backup existing README if present
-        if model_card_path.exists():
-            logger.info("Backing up existing README.md...")
-            backup_path = Path(local_path) / "README_backup.md"
-            import shutil
-            shutil.copy(model_card_path, backup_path)
-        
-        with open(model_card_path, "w", encoding="utf-8") as f:
-            f.write(model_card_content)
-        logger.info("✅ Model card created")
-        
-        # Upload folder
-        logger.info(f"Uploading adapter from {local_path}...")
-        logger.info("This may take a few minutes depending on file size and network speed...")
-        
-        upload_folder(
-            repo_id=repo_id,
-            folder_path=local_path,
-            path_in_repo="",
-            token=hf_token,
-            allow_patterns=ALLOW_PATTERNS,
-            ignore_patterns=IGNORE_PATTERNS,
-            commit_message=f"Upload {repo_name} adapter"
-        )
-        
-        logger.info(f"✅ Successfully uploaded {repo_name}!")
-        logger.info(f"🌐 View at: https://huggingface.co/{repo_id}")
-        
-    except Exception as e:
-        logger.error(f"❌ Error uploading {repo_name}: {e}")
-        raise
-
 
 def main():
-    """Main execution function."""
-    
     print(f"\n{'='*80}")
-    print("HuggingFace Adapter Upload Tool")
-    print(f"{'='*80}\n")
-    
-    # Validate configuration
-    if HF_USERNAME == "YOUR_HF_USERNAME":
-        logger.error("❌ Please set your HuggingFace username in the script!")
-        logger.error("Change HF_USERNAME = 'YOUR_HF_USERNAME' to your actual username")
-        return
-    
-    # Check authentication
-    if not HF_TOKEN:
-        logger.warning("⚠️  No HF_TOKEN found in environment")
-        logger.info("Please make sure you're logged in via: huggingface-cli login")
-        logger.info("Or set the HF_TOKEN environment variable")
-        print()
-        response = input("Continue? (y/n): ")
-        if response.lower() != 'y':
-            logger.info("Aborted by user")
-            return
-    
-    # Display upload plan
-    logger.info(f"Will upload {len(ADAPTERS)} adapter(s):")
-    for i, adapter in enumerate(ADAPTERS, 1):
-        logger.info(f"  {i}. {adapter['name']}")
-        logger.info(f"     From: {adapter['local_path']}")
-        logger.info(f"     To: {HF_USERNAME}/{adapter['name']}")
-    
-    print()
-    response = input("Proceed with upload? (y/n): ")
-    if response.lower() != 'y':
-        logger.info("Aborted by user")
-        return
-    
-    # Upload each adapter
-    print(f"\n{'='*80}\n")
-    success_count = 0
-    failed_count = 0
-    
-    for i, adapter_config in enumerate(ADAPTERS, 1):
-        logger.info(f"Processing adapter {i}/{len(ADAPTERS)}")
-        try:
-            upload_adapter_to_hf(adapter_config, HF_TOKEN)
-            success_count += 1
-        except Exception as e:
-            logger.error(f"Failed to upload {adapter_config['name']}: {e}")
-            failed_count += 1
-        print(f"\n{'-'*80}\n")
-    
-    # Final summary
-    print(f"{'='*80}")
-    print("Upload Summary")
-    print(f"{'='*80}")
-    logger.info(f"✅ Success: {success_count}/{len(ADAPTERS)}")
-    if failed_count > 0:
-        logger.error(f"❌ Failed: {failed_count}/{len(ADAPTERS)}")
-    
-    if success_count > 0:
-        logger.info("\n📦 Your adapters are now available on HuggingFace!")
-        logger.info("Others can use them with:")
-        logger.info("  from peft import PeftModel")
-        logger.info(f"  model = PeftModel.from_pretrained(base_model, '{HF_USERNAME}/adapter-name')")
-    
+    print(f"Uploading to Single Repository: {REPO_ID}")
     print(f"{'='*80}\n")
 
+    token = os.getenv("HF_TOKEN")
+    api = HfApi(token=token)
+
+    # 1. Create Repository (if not exists)
+    logger.info(f"Creating/Checking repository: {REPO_ID}")
+    try:
+        create_repo(repo_id=REPO_ID, repo_type="model", exist_ok=True, private=False, token=token)
+        logger.info("✅ Repository ready")
+    except Exception as e:
+        logger.error(f"❌ Failed to create repo: {e}")
+        return
+
+    # 2. Upload Root README
+    logger.info("Uploading main README.md...")
+    root_readme = create_root_readme()
+    with open("README_TEMP.md", "w") as f:
+        f.write(root_readme)
+    
+    try:
+        api.upload_file(
+            path_or_fileobj="README_TEMP.md",
+            path_in_repo="README.md",
+            repo_id=REPO_ID,
+            commit_message="Update main README with checkpoint list"
+        )
+        os.remove("README_TEMP.md")
+        logger.info("✅ Main README uploaded")
+    except Exception as e:
+        logger.error(f"❌ Failed to upload root README: {e}")
+
+    # 3. Upload Each Checkpoint to Subfolder
+    for i, adapter in enumerate(ADAPTERS, 1):
+        print(f"\n{'-'*60}")
+        logger.info(f"Processing ({i}/{len(ADAPTERS)}): {adapter['subfolder']}")
+        
+        local_path = adapter['local_path']
+        if not os.path.exists(local_path):
+            logger.error(f"❌ Path not found: {local_path}")
+            continue
+
+        # Create subfolder README
+        readme_content = create_subfolder_readme(adapter)
+        readme_path = os.path.join(local_path, "README.md")
+        
+        # Backup existing README if it exists
+        backup_path = None
+        if os.path.exists(readme_path):
+            backup_path = os.path.join(local_path, "README_backup.md")
+            import shutil
+            shutil.copy(readme_path, backup_path)
+            
+        with open(readme_path, "w") as f:
+            f.write(readme_content)
+
+        # Upload Folder
+        try:
+            logger.info(f"Uploading to folder: {adapter['subfolder']}...")
+            api.upload_folder(
+                folder_path=local_path,
+                repo_id=REPO_ID,
+                path_in_repo=adapter['subfolder'],
+                allow_patterns=ALLOW_PATTERNS,
+                ignore_patterns=IGNORE_PATTERNS,
+                commit_message=f"Upload {adapter['subfolder']}"
+            )
+            logger.info("✅ Upload successful")
+        except Exception as e:
+            logger.error(f"❌ Upload failed: {e}")
+        
+        # Restore backup README to keep local state clean
+        # (Optional, but good practice if you run other scripts locally)
+        if backup_path and os.path.exists(backup_path):
+            import shutil
+            shutil.move(backup_path, readme_path)
+
+    print(f"\n{'='*80}")
+    print(f"✅ All Done! View your repository here:")
+    print(f"https://huggingface.co/{REPO_ID}")
+    print(f"{'='*80}\n")
 
 if __name__ == "__main__":
     main()

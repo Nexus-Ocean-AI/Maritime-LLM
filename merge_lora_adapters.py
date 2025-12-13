@@ -53,7 +53,7 @@ DEVICE_MAP = "auto"  # Automatically distribute across GPUs/CPU
 
 # Upload to HuggingFace after merging
 UPLOAD_TO_HF = False  # Set to True to upload merged models to HF Hub
-HF_USERNAME = "YOUR_HF_USERNAME"  # Change this if uploading
+HF_USERNAME = "naga080898"  # Change this if uploading
 
 
 def create_merged_model_card(config: dict, base_model: str) -> str:
