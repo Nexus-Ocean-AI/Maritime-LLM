@@ -10,7 +10,7 @@ from trl import SFTTrainer, SFTConfig
 MODEL_NAME = "unsloth/Qwen3-30B-A3B-Instruct-2507-FP8"
 MAX_SEQ_LENGTH = 2048 # Adjust as needed
 DTYPE = None # None for auto detection
-LOAD_IN_4BIT = False # We want 8-bit/FP8, so we disable 4-bit loading
+LOAD_IN_4BIT = False # Reverting to 8-bit/FP8 as requested
 
 # Dataset configuration
 # Assumes a JSONL file with 'query' and 'answer' fields.
@@ -112,8 +112,8 @@ trainer = SFTTrainer(
     dataset_text_field = "text",
     max_seq_length = MAX_SEQ_LENGTH,
     args = SFTConfig(
-        per_device_train_batch_size = 2,
-        gradient_accumulation_steps = 4,
+        per_device_train_batch_size = 4, # Increased to 4 to ensure experts receive tokens (avoids log2(0) error)
+        gradient_accumulation_steps = 2, # Reduced to maintain effective batch size
         warmup_steps = 5,
         max_steps = 60, # Adjust for full training
         learning_rate = 2e-4,
