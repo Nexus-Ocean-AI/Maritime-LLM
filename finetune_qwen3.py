@@ -1,9 +1,8 @@
-# from unsloth import FastLanguageModel
+from unsloth import FastLanguageModel
 import torch
 from datasets import load_dataset
-from transformers import AutoTokenizer
-# from trl import SFTTrainer, SFTConfig
-import sys
+from trl import SFTTrainer, SFTConfig
+
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -26,43 +25,41 @@ TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj",
                   "gate_proj", "up_proj", "down_proj"]
 
 # -----------------------------------------------------------------------------
-# 1. Load Model (SKIPPED FOR DATA CHECK)
+# 1. Load Model
 # -----------------------------------------------------------------------------
-print(f"Loading tokenizer: {MODEL_NAME}")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-# model, tokenizer = FastLanguageModel.from_pretrained(
-#     model_name = MODEL_NAME,
-#     max_seq_length = MAX_SEQ_LENGTH,
-#     dtype = DTYPE,
-#     load_in_4bit = LOAD_IN_4BIT,
-# )
+print(f"Loading model: {MODEL_NAME}")
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name = MODEL_NAME,
+    max_seq_length = MAX_SEQ_LENGTH,
+    dtype = DTYPE,
+    load_in_4bit = LOAD_IN_4BIT,
+)
 
 # -----------------------------------------------------------------------------
-# 2. Add LoRA Adapters (SKIPPED)
+# 2. Add LoRA Adapters
 # -----------------------------------------------------------------------------
-# print("Adding LoRA adapters...")
-# model = FastLanguageModel.get_peft_model(
-#     model,
-#     r = LORA_R,
-#     target_modules = TARGET_MODULES,
-#     lora_alpha = LORA_ALPHA,
-#     lora_dropout = LORA_DROPOUT,
-#     bias = "none",
-#     use_gradient_checkpointing = "unsloth", 
-#     random_state = 3407,
-#     use_rslora = False,
-#     loftq_config = None,
-# )
+print("Adding LoRA adapters...")
+model = FastLanguageModel.get_peft_model(
+    model,
+    r = LORA_R,
+    target_modules = TARGET_MODULES,
+    lora_alpha = LORA_ALPHA,
+    lora_dropout = LORA_DROPOUT,
+    bias = "none",
+    use_gradient_checkpointing = "unsloth", 
+    random_state = 3407,
+    use_rslora = False,
+    loftq_config = None,
+)
 
 # -----------------------------------------------------------------------------
 # 3. Prepare Dataset
 # -----------------------------------------------------------------------------
-prompt = """You are a highly knowledgeable maritime expert. You are provided with a query related to maritime regulations, safety standards, or operational manuals. Answer the query accurately and comprehensively.
-
-### Query:
-{}
-
-### Answer:
+prompt = """<|im_start|>system
+You are a highly knowledgeable maritime expert. You are provided with a query related to maritime regulations, safety standards, or operational manuals. Answer the query accurately and comprehensively.<|im_end|>
+<|im_start|>user
+{}<|im_end|>
+<|im_start|>assistant
 {}"""
 
 EOS_TOKEN = tokenizer.eos_token
@@ -89,9 +86,6 @@ try:
         print(dataset["text"][i])
         print("-------------------")
     
-    print("Data preparation check complete. Exiting before training.")
-    sys.exit(0)
-
 except Exception as e:
     print(f"Error loading dataset: {e}")
     print("Please ensure you have a valid JSONL file at 'custom_dataset.jsonl' with 'query' and 'answer' fields.")
