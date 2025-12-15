@@ -112,7 +112,7 @@ trainer = SFTTrainer(
     dataset_text_field = "text",
     max_seq_length = MAX_SEQ_LENGTH,
     args = SFTConfig(
-        per_device_train_batch_size = 16,  # Increased for better gradient estimates (~55GB VRAM)
+        per_device_train_batch_size = 32,  # Increased for better gradient estimates (~55GB VRAM)
         gradient_accumulation_steps = 2,   # Effective batch size = 16 * 2 = 32
         warmup_ratio = 0.03,  # 3% of total steps for warmup
         num_train_epochs = 3,  # Full training on dataset (3 epochs)
