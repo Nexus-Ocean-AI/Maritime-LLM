@@ -8,7 +8,7 @@ from trl import SFTTrainer, SFTConfig
 # Configuration
 # -----------------------------------------------------------------------------
 MODEL_NAME = "unsloth/Qwen3-30B-A3B-Instruct-2507"  # BF16 version (non-FP8 to avoid kernel bug)
-MAX_SEQ_LENGTH = 2048 # Adjust as needed
+MAX_SEQ_LENGTH = 4096  # Increased for longer maritime documents
 DTYPE = None # None for auto detection
 LOAD_IN_4BIT = True  # 4-bit QLoRA - stable training with minimal accuracy loss
 
@@ -17,9 +17,9 @@ LOAD_IN_4BIT = True  # 4-bit QLoRA - stable training with minimal accuracy loss
 # Update the path to your custom dataset.
 DATASET_PATH = "processed_queries_20251216_014609.jsonl" 
 
-# LoRA Config
-LORA_R = 16
-LORA_ALPHA = 16
+# LoRA Config - Optimized for 80GB GPU
+LORA_R = 64  # Increased from 16 for better learning capacity
+LORA_ALPHA = 128  # 2x rank is a good scaling factor
 LORA_DROPOUT = 0
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj",
                   "gate_proj", "up_proj", "down_proj"]
@@ -112,17 +112,20 @@ trainer = SFTTrainer(
     dataset_text_field = "text",
     max_seq_length = MAX_SEQ_LENGTH,
     args = SFTConfig(
-        per_device_train_batch_size = 8,  # Larger batch for MoE - ensures all experts receive tokens
-        gradient_accumulation_steps = 4,  # Effective batch size = 8 * 4 = 32
-        warmup_steps = 5,
-        max_steps = 60, # Adjust for full training
+        per_device_train_batch_size = 16,  # Increased for better gradient estimates (~55GB VRAM)
+        gradient_accumulation_steps = 2,   # Effective batch size = 16 * 2 = 32
+        warmup_ratio = 0.03,  # 3% of total steps for warmup
+        num_train_epochs = 3,  # Full training on dataset (3 epochs)
         learning_rate = 2e-4,
-        logging_steps = 1,
+        logging_steps = 10,
+        save_steps = 500,  # Save checkpoints every 500 steps
+        save_total_limit = 3,  # Keep last 3 checkpoints
         optim = "adamw_8bit",
         weight_decay = 0.01,
-        lr_scheduler_type = "linear",
+        lr_scheduler_type = "cosine",  # Cosine schedule works better for longer training
         seed = 3407,
         output_dir = "outputs_qwen3_finetune",
+        bf16 = True,  # Use BF16 for faster training on H100
     ),
 )
 
