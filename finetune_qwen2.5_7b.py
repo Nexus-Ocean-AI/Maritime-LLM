@@ -326,9 +326,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Update dataset path if provided
-    global DATASET_PATH
-    DATASET_PATH = args.dataset
+    # Update dataset path from args
+    dataset_path = args.dataset
     
     print("\n" + "=" * 80)
     print("🚢 MARITIME QWEN2.5-7B FINE-TUNING PIPELINE")
@@ -338,7 +337,7 @@ def main():
     logger.info(f"  • Mode: {'No merge (base model)' if args.no_merge else ('Skip merge' if args.skip_merge else 'Merge + SFT')}")
     if not args.no_merge:
         logger.info(f"  • Adapter: {args.adapter}")
-    logger.info(f"  • Dataset: {DATASET_PATH}")
+    logger.info(f"  • Dataset: {dataset_path}")
     logger.info(f"  • Output: {OUTPUT_DIR}")
     
     # -------------------------------------------------------------------------
