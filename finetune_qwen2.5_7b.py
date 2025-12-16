@@ -24,7 +24,15 @@ import torch
 from pathlib import Path
 
 # Import merge function from existing module
-from merge_lora_adapters import merge_and_save, ADAPTERS as MERGE_ADAPTERS, BASE_MODEL_ID
+try:
+    from merge_lora_adapters import merge_and_save, ADAPTERS as MERGE_ADAPTERS, BASE_MODEL_ID
+except ImportError:
+    merge_and_save = None
+    MERGE_ADAPTERS = {}
+    BASE_MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+
+# Base model for direct SFT (without adapter merging)
+BASE_INSTRUCT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -283,7 +291,7 @@ def main():
     parser.add_argument(
         "--adapter",
         type=str,
-        choices=list(MERGE_ADAPTERS.keys()),
+        choices=list(MERGE_ADAPTERS.keys()) if MERGE_ADAPTERS else ["phase1a", "phase1b"],
         default="phase1a",
         help="Which adapter to merge before SFT (default: phase1a)"
     )
@@ -293,10 +301,21 @@ def main():
         help="Skip the merge step (use if model is already merged)"
     )
     parser.add_argument(
+        "--no-merge",
+        action="store_true",
+        help="Run SFT directly on base Qwen-2.5-7B-Instruct without merging any adapters"
+    )
+    parser.add_argument(
         "--merged-model-path",
         type=str,
         default=None,
         help="Path to already-merged model (required if --skip-merge is set)"
+    )
+    parser.add_argument(
+        "--base-model",
+        type=str,
+        default=BASE_INSTRUCT_MODEL,
+        help=f"Base model to use for --no-merge mode (default: {BASE_INSTRUCT_MODEL})"
     )
     parser.add_argument(
         "--dataset",
@@ -316,15 +335,21 @@ def main():
     print("=" * 80 + "\n")
     
     logger.info("Configuration:")
-    logger.info(f"  • Adapter: {args.adapter}")
-    logger.info(f"  • Skip merge: {args.skip_merge}")
+    logger.info(f"  • Mode: {'No merge (base model)' if args.no_merge else ('Skip merge' if args.skip_merge else 'Merge + SFT')}")
+    if not args.no_merge:
+        logger.info(f"  • Adapter: {args.adapter}")
     logger.info(f"  • Dataset: {DATASET_PATH}")
     logger.info(f"  • Output: {OUTPUT_DIR}")
     
     # -------------------------------------------------------------------------
-    # STEP 1: Merge Adapters (or use existing)
+    # STEP 1: Merge Adapters (or use existing / base model)
     # -------------------------------------------------------------------------
-    if args.skip_merge:
+    if args.no_merge:
+        # Use base Instruct model directly without any adapter merging
+        merged_model_path = args.base_model
+        logger.info(f"\n🚀 Running SFT directly on base model: {merged_model_path}")
+        logger.info("   (No domain adaptive pretraining adapters will be merged)")
+    elif args.skip_merge:
         if not args.merged_model_path:
             logger.error("❌ --merged-model-path is required when using --skip-merge")
             sys.exit(1)
@@ -336,6 +361,9 @@ def main():
         merged_model_path = args.merged_model_path
         logger.info(f"\n⏩ Skipping merge. Using existing model: {merged_model_path}")
     else:
+        if merge_and_save is None:
+            logger.error("❌ merge_lora_adapters module not available. Use --no-merge to skip.")
+            sys.exit(1)
         merged_model_path = merge_adapters(args.adapter)
     
     # -------------------------------------------------------------------------
@@ -350,7 +378,7 @@ def main():
     print("🎉 PIPELINE COMPLETE!")
     print("=" * 80)
     logger.info("\nSummary:")
-    logger.info(f"  ✅ Merged model: {merged_model_path}")
+    logger.info(f"  ✅ Base/Merged model: {merged_model_path}")
     logger.info(f"  ✅ SFT model: {final_model_path}")
     logger.info("\nNext steps:")
     logger.info("  1. Evaluate the model on maritime QA benchmarks")
