@@ -7,3 +7,5 @@ unsloth_compiled_cache/
 # OPTIONAL: ignore nohup output
 nohup.out
 
+__pycache__/
+*.pyc
