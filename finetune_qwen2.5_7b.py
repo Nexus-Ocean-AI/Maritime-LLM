@@ -135,8 +135,8 @@ def run_sft(merged_model_path: str):
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=merged_model_path,
         max_seq_length=MAX_SEQ_LENGTH,
-        dtype=None,  # Auto detect
-        load_in_4bit=True,  # 4-bit QLoRA for efficient training
+        dtype=None,  # Auto detect (will use bf16)
+        load_in_4bit=False,  # Standard LoRA (no quantization)
     )
     logger.info("✅ Merged model loaded successfully")
     
