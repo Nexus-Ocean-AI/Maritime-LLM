@@ -291,7 +291,18 @@ def run_continued_training(args):
     logger.info(f"Loading LoRA adapter from checkpoint: {checkpoint_path}")
     from peft import PeftModel
     model = PeftModel.from_pretrained(model, checkpoint_path, is_trainable=True)
-    logger.info("✅ Model and checkpoint loaded successfully")
+    
+    # Explicitly enable training mode and set gradients for adapter parameters
+    model.train()
+    for name, param in model.named_parameters():
+        if "lora" in name.lower() or "adapter" in name.lower():
+            param.requires_grad = True
+    
+    # Count trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"✅ Model and checkpoint loaded successfully")
+    logger.info(f"   Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
     
     # -------------------------------------------------------------------------
     # 2. Load and Split Dataset
