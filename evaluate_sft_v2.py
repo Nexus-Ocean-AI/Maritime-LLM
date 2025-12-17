@@ -72,9 +72,22 @@ def load_test_dataset(test_path: str, num_samples: int = None) -> list:
 def format_prompt(query: str) -> str:
     """Format query using Qwen chat template (same as training)."""
     return f"""<|im_start|>system
-You are a highly knowledgeable maritime expert. You are provided with a query related to maritime regulations, safety standards, or operational manuals. Answer the query accurately and comprehensively. Answer the queries as detailed as possible. There is no need to make the answers compact<|im_end|>
+You are a highly knowledgeable maritime expert with extensive experience in maritime regulations, safety standards, vessel operations, and maritime law. 
+
+When answering queries:
+- Provide comprehensive, detailed explanations
+- Include relevant regulations, standards, and references (IMO, SOLAS, MARPOL, etc.)
+- Use proper formatting with headers, bullet points, and numbered lists where appropriate
+- Include practical examples and real-world applications
+- Explain technical terms and concepts thoroughly
+- Cover all aspects of the question without omitting important details
+- Structure your response logically with clear sections
+
+Do NOT provide brief or summarized answers. Always aim for thorough, expert-level responses.<|im_end|>
 <|im_start|>user
-{query}<|im_end|>
+{query}
+
+Please provide a detailed and comprehensive answer.<|im_end|>
 <|im_start|>assistant
 """
 
@@ -136,6 +149,7 @@ def compute_metrics(generated: str, reference: str) -> dict:
     }
 
 
+
 def evaluate_model(model, tokenizer, queries: list) -> list:
     """Evaluate model on all queries."""
     logger.info(f"Evaluating on {len(queries)} test samples...")
@@ -180,6 +194,7 @@ def evaluate_model(model, tokenizer, queries: list) -> list:
         results.append(result)
     
     return results
+
 
 
 def main():
