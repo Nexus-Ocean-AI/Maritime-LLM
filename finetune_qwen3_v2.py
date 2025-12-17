@@ -71,7 +71,7 @@ TRAINING_CONFIG = {
     "num_train_epochs": 2,  # Only 2 epochs for continuation
     "learning_rate": 1e-4,  # Slightly lower LR for fine-tuning
     "logging_steps": 10,
-    "save_steps": 250,
+    "save_steps": 200,  # Must be multiple of eval_steps
     "save_total_limit": 3,
     "optim": "adamw_8bit",
     "weight_decay": 0.01,
