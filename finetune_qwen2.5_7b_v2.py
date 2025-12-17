@@ -276,9 +276,9 @@ def run_continued_training(args):
     logger.info(f"Output directory: {output_dir}")
     
     # -------------------------------------------------------------------------
-    # 1. Load Base Model + Checkpoint Adapter
+    # 1. Load Base Model and Add LoRA Adapters (unsloth way)
     # -------------------------------------------------------------------------
-    logger.info("\n[1/5] Loading base model with checkpoint adapter...")
+    logger.info("\n[1/5] Loading base model and adding LoRA adapters...")
     
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=BASE_MODEL_NAME,
@@ -287,22 +287,22 @@ def run_continued_training(args):
         load_in_4bit=LOAD_IN_4BIT,
     )
     
-    # Load the LoRA adapter from checkpoint
-    logger.info(f"Loading LoRA adapter from checkpoint: {checkpoint_path}")
-    from peft import PeftModel
-    model = PeftModel.from_pretrained(model, checkpoint_path, is_trainable=True)
-    
-    # Explicitly enable training mode and set gradients for adapter parameters
-    model.train()
-    for name, param in model.named_parameters():
-        if "lora" in name.lower() or "adapter" in name.lower():
-            param.requires_grad = True
-    
-    # Count trainable parameters
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
-    logger.info(f"✅ Model and checkpoint loaded successfully")
-    logger.info(f"   Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
+    # Add LoRA adapters using FastLanguageModel (unsloth-compatible way)
+    logger.info("Adding LoRA adapters for continued training...")
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=LORA_R,
+        target_modules=TARGET_MODULES,
+        lora_alpha=LORA_ALPHA,
+        lora_dropout=LORA_DROPOUT,
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=3407,
+        use_rslora=False,
+        loftq_config=None,
+    )
+    logger.info(f"✅ Model loaded and LoRA adapters added (rank={LORA_R}, alpha={LORA_ALPHA})")
+    logger.info(f"   Will resume from checkpoint: {checkpoint_path}")
     
     # -------------------------------------------------------------------------
     # 2. Load and Split Dataset
@@ -335,7 +335,7 @@ def run_continued_training(args):
         logger.info(text[:500] + "..." if len(text) > 500 else text)
     
     # -------------------------------------------------------------------------
-    # 4. Configure Trainer
+    # 4. Configure Trainer with resume_from_checkpoint
     # -------------------------------------------------------------------------
     logger.info("\n[4/5] Configuring SFT Trainer...")
     
@@ -378,13 +378,14 @@ def run_continued_training(args):
     logger.info(f"  • Epochs: {TRAINING_CONFIG['num_train_epochs']}")
     logger.info(f"  • Learning rate: {TRAINING_CONFIG['learning_rate']}")
     logger.info(f"  • Eval every: {TRAINING_CONFIG['eval_steps']} steps")
+    logger.info(f"  • Resuming from: {checkpoint_path}")
     
     # -------------------------------------------------------------------------
-    # 5. Train
+    # 5. Train (resuming from checkpoint)
     # -------------------------------------------------------------------------
     logger.info("\n[5/5] Starting continued training...")
     
-    trainer_stats = trainer.train()
+    trainer_stats = trainer.train(resume_from_checkpoint=checkpoint_path)
     
     logger.info("\n✅ Training complete!")
     logger.info(f"  • Total steps: {trainer_stats.global_step}")
