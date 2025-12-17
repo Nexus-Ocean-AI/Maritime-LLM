@@ -1,0 +1,11 @@
+{
+  "model_dir": "outputs_qwen2.5_7b_sft_v2_20251217_105003",
+  "num_samples": 213,
+  "timestamp": "20251217_131824",
+  "metrics": {
+    "rouge1_f_mean": 0.19471449123757156,
+    "rouge2_f_mean": 0.0677808559495796,
+    "rougeL_f_mean": 0.11501594223280442,
+    "bleu_mean": 0.0006752590315502158
+  }
+}
