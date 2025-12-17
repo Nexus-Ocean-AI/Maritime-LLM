@@ -219,11 +219,17 @@ def main():
         default="evaluation_results",
         help="Output directory for results"
     )
+    parser.add_argument(
+        "--compare-base",
+        action="store_true",
+        default=True,
+        help="Also evaluate base model for comparison (default: True)"
+    )
     
     args = parser.parse_args()
     
     print("\n" + "=" * 80)
-    print("🚢 MARITIME SFT V2 MODEL EVALUATION")
+    print("🚢 MARITIME SFT V2 MODEL EVALUATION (BASE vs FINE-TUNED)")
     print("=" * 80 + "\n")
     
     # Paths
@@ -243,17 +249,18 @@ def main():
     logger.info(f"  • Model directory: {args.model_dir}")
     logger.info(f"  • SFT model: {sft_model_path}")
     logger.info(f"  • Test dataset: {test_dataset_path}")
+    logger.info(f"  • Compare with base: {args.compare_base}")
     
     # -------------------------------------------------------------------------
     # 1. Load Test Dataset
     # -------------------------------------------------------------------------
-    logger.info("\n[1/4] Loading test dataset...")
+    logger.info("\n[1/5] Loading test dataset...")
     queries = load_test_dataset(test_dataset_path, args.num_samples)
     
     # -------------------------------------------------------------------------
     # 2. Load Base Model
     # -------------------------------------------------------------------------
-    logger.info("\n[2/4] Loading base model...")
+    logger.info("\n[2/5] Loading base model...")
     
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     
@@ -271,14 +278,98 @@ def main():
     logger.info(f"✅ Base model loaded: {BASE_MODEL_ID}")
     
     # -------------------------------------------------------------------------
-    # 3. Load SFT Adapter and Evaluate
+    # 3. Evaluate Base Model (if requested)
     # -------------------------------------------------------------------------
-    logger.info("\n[3/4] Loading SFT adapter and evaluating...")
+    base_results = None
+    if args.compare_base:
+        logger.info("\n[3/5] Evaluating BASE model (no fine-tuning)...")
+        base_results = []
+        base_model.eval()
+        
+        for query_data in tqdm(queries, desc="Base Model"):
+            query = query_data["query"]
+            reference = query_data["answer"]
+            
+            try:
+                generated = generate_response(base_model, tokenizer, query)
+                metrics = compute_metrics(generated, reference)
+                
+                result = {
+                    "base_answer": generated,
+                    "base_length": len(generated),
+                    "base_rouge1_f": metrics['rouge1_f'],
+                    "base_rouge2_f": metrics['rouge2_f'],
+                    "base_rougeL_f": metrics['rougeL_f'],
+                    "base_bleu": metrics['bleu'],
+                }
+            except Exception as e:
+                logger.error(f"Error: {e}")
+                result = {
+                    "base_answer": f"[ERROR: {str(e)}]",
+                    "base_length": 0,
+                    "base_rouge1_f": 0.0,
+                    "base_rouge2_f": 0.0,
+                    "base_rougeL_f": 0.0,
+                    "base_bleu": 0.0,
+                }
+            base_results.append(result)
+    
+    # -------------------------------------------------------------------------
+    # 4. Load SFT Adapter and Evaluate
+    # -------------------------------------------------------------------------
+    logger.info("\n[4/5] Loading SFT adapter and evaluating...")
     
     sft_model = PeftModel.from_pretrained(base_model, sft_model_path)
     logger.info(f"✅ SFT adapter loaded from: {sft_model_path}")
     
-    results = evaluate_model(sft_model, tokenizer, queries)
+    sft_results = []
+    sft_model.eval()
+    
+    for i, query_data in enumerate(tqdm(queries, desc="SFT Model")):
+        query = query_data["query"]
+        reference = query_data["answer"]
+        
+        try:
+            generated = generate_response(sft_model, tokenizer, query)
+            metrics = compute_metrics(generated, reference)
+            
+            result = {
+                "query": query,
+                "reference_answer": reference,
+                "sft_answer": generated,
+                "query_type": query_data.get("query_type", "unknown"),
+                "difficulty": query_data.get("difficulty", "unknown"),
+                "ref_length": len(reference),
+                "sft_length": len(generated),
+                "sft_rouge1_f": metrics['rouge1_f'],
+                "sft_rouge2_f": metrics['rouge2_f'],
+                "sft_rougeL_f": metrics['rougeL_f'],
+                "sft_bleu": metrics['bleu'],
+            }
+            
+            # Add base results if available
+            if base_results:
+                result.update(base_results[i])
+                
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            result = {
+                "query": query,
+                "reference_answer": reference,
+                "sft_answer": f"[ERROR: {str(e)}]",
+                "query_type": query_data.get("query_type", "unknown"),
+                "difficulty": query_data.get("difficulty", "unknown"),
+                "ref_length": len(reference),
+                "sft_length": 0,
+                "sft_rouge1_f": 0.0,
+                "sft_rouge2_f": 0.0,
+                "sft_rougeL_f": 0.0,
+                "sft_bleu": 0.0,
+            }
+            if base_results:
+                result.update(base_results[i])
+        
+        sft_results.append(result)
     
     # Clean up
     del sft_model
@@ -286,17 +377,17 @@ def main():
     torch.cuda.empty_cache()
     
     # -------------------------------------------------------------------------
-    # 4. Save Results
+    # 5. Save Results
     # -------------------------------------------------------------------------
-    logger.info("\n[4/4] Saving results...")
+    logger.info("\n[5/5] Saving results...")
     
     os.makedirs(args.output_dir, exist_ok=True)
     
-    df = pd.DataFrame(results)
+    df = pd.DataFrame(sft_results)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name = os.path.basename(args.model_dir)
-    csv_path = os.path.join(args.output_dir, f"eval_{model_name}_{timestamp}.csv")
+    csv_path = os.path.join(args.output_dir, f"eval_comparison_{model_name}_{timestamp}.csv")
     
     df.to_csv(csv_path, index=False)
     logger.info(f"✅ Results saved: {csv_path}")
@@ -305,63 +396,95 @@ def main():
     # Summary Statistics
     # -------------------------------------------------------------------------
     print("\n" + "=" * 80)
-    print("📊 EVALUATION SUMMARY")
+    print("📊 EVALUATION SUMMARY - BASE vs FINE-TUNED")
     print("=" * 80)
     
-    logger.info(f"\nTotal queries evaluated: {len(results)}")
+    logger.info(f"\nTotal queries evaluated: {len(sft_results)}")
     
-    # Overall metrics
-    logger.info("\n📈 Overall Metrics:")
-    logger.info(f"  • ROUGE-1 F1: {df['rouge1_f'].mean():.4f}")
-    logger.info(f"  • ROUGE-2 F1: {df['rouge2_f'].mean():.4f}")
-    logger.info(f"  • ROUGE-L F1: {df['rougeL_f'].mean():.4f}")
-    logger.info(f"  • BLEU: {df['bleu'].mean():.4f}")
+    # Comparison metrics
+    print("\n" + "-" * 80)
+    print("📈 METRICS COMPARISON:")
+    print("-" * 80)
+    print(f"{'Metric':<20} {'Base Model':>15} {'SFT Model':>15} {'Improvement':>15}")
+    print("-" * 80)
     
-    # Response lengths
-    logger.info("\n📏 Average Response Lengths:")
-    logger.info(f"  • Reference: {df['ref_length'].mean():.0f} chars")
-    logger.info(f"  • Generated: {df['gen_length'].mean():.0f} chars")
+    if args.compare_base:
+        base_rouge1 = df['base_rouge1_f'].mean()
+        base_rouge2 = df['base_rouge2_f'].mean()
+        base_rougeL = df['base_rougeL_f'].mean()
+        base_bleu = df['base_bleu'].mean()
+        base_len = df['base_length'].mean()
+    else:
+        base_rouge1 = base_rouge2 = base_rougeL = base_bleu = base_len = 0
     
-    # Metrics by query type
-    if 'query_type' in df.columns:
-        logger.info("\n📊 ROUGE-L by Query Type:")
-        for qtype in df['query_type'].unique():
-            subset = df[df['query_type'] == qtype]
-            logger.info(f"  • {qtype}: {subset['rougeL_f'].mean():.4f} (n={len(subset)})")
+    sft_rouge1 = df['sft_rouge1_f'].mean()
+    sft_rouge2 = df['sft_rouge2_f'].mean()
+    sft_rougeL = df['sft_rougeL_f'].mean()
+    sft_bleu = df['sft_bleu'].mean()
+    sft_len = df['sft_length'].mean()
+    ref_len = df['ref_length'].mean()
     
-    # Metrics by difficulty
-    if 'difficulty' in df.columns:
-        logger.info("\n📊 ROUGE-L by Difficulty:")
-        for diff in df['difficulty'].unique():
-            subset = df[df['difficulty'] == diff]
-            logger.info(f"  • {diff}: {subset['rougeL_f'].mean():.4f} (n={len(subset)})")
+    if args.compare_base:
+        print(f"{'ROUGE-1 F1':<20} {base_rouge1:>15.4f} {sft_rouge1:>15.4f} {sft_rouge1-base_rouge1:>+15.4f}")
+        print(f"{'ROUGE-2 F1':<20} {base_rouge2:>15.4f} {sft_rouge2:>15.4f} {sft_rouge2-base_rouge2:>+15.4f}")
+        print(f"{'ROUGE-L F1':<20} {base_rougeL:>15.4f} {sft_rougeL:>15.4f} {sft_rougeL-base_rougeL:>+15.4f}")
+        print(f"{'BLEU':<20} {base_bleu:>15.4f} {sft_bleu:>15.4f} {sft_bleu-base_bleu:>+15.4f}")
+        print("-" * 80)
+        print(f"{'Avg Length':<20} {base_len:>15.0f} {sft_len:>15.0f} {sft_len-base_len:>+15.0f}")
+        print(f"{'Reference Length':<20} {ref_len:>15.0f}")
+    else:
+        print(f"{'ROUGE-1 F1':<20} {'N/A':>15} {sft_rouge1:>15.4f}")
+        print(f"{'ROUGE-2 F1':<20} {'N/A':>15} {sft_rouge2:>15.4f}")
+        print(f"{'ROUGE-L F1':<20} {'N/A':>15} {sft_rougeL:>15.4f}")
+        print(f"{'BLEU':<20} {'N/A':>15} {sft_bleu:>15.4f}")
     
     # Show sample comparisons
     print("\n" + "=" * 80)
     print("📝 SAMPLE COMPARISONS (First 3 queries)")
     print("=" * 80)
     
-    for i in range(min(3, len(results))):
+    for i in range(min(3, len(sft_results))):
         print(f"\n{'─'*80}")
-        print(f"Query {i+1}: {results[i]['query'][:100]}...")
+        print(f"Query {i+1}: {sft_results[i]['query'][:100]}...")
         print(f"\n🎯 Reference Answer (first 300 chars):")
-        print(f"  {results[i]['reference_answer'][:300]}...")
-        print(f"\n🤖 Generated Answer (first 300 chars):")
-        print(f"  {results[i]['generated_answer'][:300]}...")
-        print(f"\n📈 Scores: ROUGE-L={results[i]['rougeL_f']:.3f}, BLEU={results[i]['bleu']:.3f}")
+        print(f"  {sft_results[i]['reference_answer'][:300]}...")
+        
+        if args.compare_base:
+            print(f"\n🔵 Base Model (first 300 chars) [ROUGE-L={sft_results[i]['base_rougeL_f']:.3f}]:")
+            print(f"  {sft_results[i]['base_answer'][:300]}...")
+        
+        print(f"\n� SFT Model (first 300 chars) [ROUGE-L={sft_results[i]['sft_rougeL_f']:.3f}]:")
+        print(f"  {sft_results[i]['sft_answer'][:300]}...")
     
     # Save summary
     summary = {
         "model_dir": args.model_dir,
-        "num_samples": len(results),
+        "num_samples": len(sft_results),
         "timestamp": timestamp,
-        "metrics": {
-            "rouge1_f_mean": float(df['rouge1_f'].mean()),
-            "rouge2_f_mean": float(df['rouge2_f'].mean()),
-            "rougeL_f_mean": float(df['rougeL_f'].mean()),
-            "bleu_mean": float(df['bleu'].mean()),
+        "base_model": BASE_MODEL_ID,
+        "sft_metrics": {
+            "rouge1_f_mean": float(sft_rouge1),
+            "rouge2_f_mean": float(sft_rouge2),
+            "rougeL_f_mean": float(sft_rougeL),
+            "bleu_mean": float(sft_bleu),
+            "avg_length": float(sft_len),
         }
     }
+    
+    if args.compare_base:
+        summary["base_metrics"] = {
+            "rouge1_f_mean": float(base_rouge1),
+            "rouge2_f_mean": float(base_rouge2),
+            "rougeL_f_mean": float(base_rougeL),
+            "bleu_mean": float(base_bleu),
+            "avg_length": float(base_len),
+        }
+        summary["improvement"] = {
+            "rouge1_f": float(sft_rouge1 - base_rouge1),
+            "rouge2_f": float(sft_rouge2 - base_rouge2),
+            "rougeL_f": float(sft_rougeL - base_rougeL),
+            "bleu": float(sft_bleu - base_bleu),
+        }
     
     summary_path = os.path.join(args.output_dir, f"eval_summary_{model_name}_{timestamp}.json")
     with open(summary_path, 'w') as f:
@@ -378,3 +501,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
