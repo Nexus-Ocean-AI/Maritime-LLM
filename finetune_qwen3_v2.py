@@ -65,10 +65,10 @@ TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj",
 
 # Training Configuration for continued training
 TRAINING_CONFIG = {
-    "per_device_train_batch_size": 32,
+    "per_device_train_batch_size": 8,
     "gradient_accumulation_steps": 2,
     "warmup_ratio": 0.03,
-    "num_train_epochs": 2,  # Only 2 epochs for continuation
+    "num_train_epochs": 3,  # Only 2 epochs for continuation
     "learning_rate": 1e-4,  # Slightly lower LR for fine-tuning
     "logging_steps": 10,
     "save_steps": 200,  # Must be multiple of eval_steps
