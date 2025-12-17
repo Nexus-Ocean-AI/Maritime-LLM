@@ -301,8 +301,19 @@ def run_continued_training(args):
         use_rslora=False,
         loftq_config=None,
     )
-    logger.info(f"✅ Model loaded and LoRA adapters added (rank={LORA_R}, alpha={LORA_ALPHA})")
-    logger.info(f"   Will resume from checkpoint: {checkpoint_path}")
+    logger.info(f"✅ LoRA adapters added (rank={LORA_R}, alpha={LORA_ALPHA})")
+    
+    # Load adapter weights from checkpoint (without trainer state)
+    logger.info(f"Loading adapter weights from checkpoint: {checkpoint_path}")
+    from safetensors.torch import load_file
+    adapter_weights_path = os.path.join(checkpoint_path, "adapter_model.safetensors")
+    if os.path.exists(adapter_weights_path):
+        adapter_weights = load_file(adapter_weights_path)
+        # Load the weights into the model
+        model.load_state_dict(adapter_weights, strict=False)
+        logger.info(f"✅ Loaded adapter weights from: {adapter_weights_path}")
+    else:
+        logger.warning(f"⚠️ No adapter weights found at {adapter_weights_path}, starting with fresh adapters")
     
     # -------------------------------------------------------------------------
     # 2. Load and Split Dataset
@@ -378,14 +389,14 @@ def run_continued_training(args):
     logger.info(f"  • Epochs: {TRAINING_CONFIG['num_train_epochs']}")
     logger.info(f"  • Learning rate: {TRAINING_CONFIG['learning_rate']}")
     logger.info(f"  • Eval every: {TRAINING_CONFIG['eval_steps']} steps")
-    logger.info(f"  • Resuming from: {checkpoint_path}")
+    logger.info(f"  • Adapter weights loaded from: {checkpoint_path}")
     
     # -------------------------------------------------------------------------
-    # 5. Train (resuming from checkpoint)
+    # 5. Train (fresh training on new data with pre-trained adapter weights)
     # -------------------------------------------------------------------------
-    logger.info("\n[5/5] Starting continued training...")
+    logger.info("\n[5/5] Starting training on new data...")
     
-    trainer_stats = trainer.train(resume_from_checkpoint=checkpoint_path)
+    trainer_stats = trainer.train()
     
     logger.info("\n✅ Training complete!")
     logger.info(f"  • Total steps: {trainer_stats.global_step}")
