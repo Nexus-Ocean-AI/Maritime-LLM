@@ -45,7 +45,7 @@ BASE_MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 DEFAULT_MODEL_DIR = "outputs_qwen2.5_7b_sft_v2_20251217_105003"
 
 # Generation settings
-MAX_NEW_TOKENS = 768
+MAX_NEW_TOKENS = 4096  # Increased to allow comprehensive answers
 TEMPERATURE = 0.1
 DO_SAMPLE = False
 
@@ -72,7 +72,7 @@ def load_test_dataset(test_path: str, num_samples: int = None) -> list:
 def format_prompt(query: str) -> str:
     """Format query using Qwen chat template (same as training)."""
     return f"""<|im_start|>system
-You are a highly knowledgeable maritime expert. You are provided with a query related to maritime regulations, safety standards, or operational manuals. Answer the query accurately and comprehensively.<|im_end|>
+You are a highly knowledgeable maritime expert. You are provided with a query related to maritime regulations, safety standards, or operational manuals. Answer the query accurately and comprehensively. Answer the queries as detailed as possible. There is no need to make the answers compact<|im_end|>
 <|im_start|>user
 {query}<|im_end|>
 <|im_start|>assistant
