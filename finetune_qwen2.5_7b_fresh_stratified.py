@@ -42,7 +42,7 @@ DTYPE = None  # Auto detection
 LOAD_IN_4BIT = True  # 4-bit QLoRA
 
 # Dataset Configuration
-DATASET_PATH = "processed_queries_20251216_014609.jsonl"
+DATASET_PATH = "processed_queries_merged.jsonl"
 TRAIN_RATIO = 0.90
 VAL_RATIO = 0.05
 TEST_RATIO = 0.05
