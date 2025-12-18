@@ -63,7 +63,7 @@ TRAINING_CONFIG = {
     "num_train_epochs": 3,
     "learning_rate": 1e-4, # Reduced LR to prevent overfitting (was 2e-4 in 7b script)
     "logging_steps": 10,
-    "save_steps": 500,
+    "save_steps": 250,
     "save_total_limit": 3,
     "optim": "adamw_8bit",
     "weight_decay": 0.1, # Increased weight decay for regularization (was 0.01 in 7b script)
@@ -72,7 +72,7 @@ TRAINING_CONFIG = {
     "seed": 3407,
     "bf16": True,
     "eval_strategy": "steps",
-    "eval_steps": 500,
+    "eval_steps": 250,
     "load_best_model_at_end": True,
     "metric_for_best_model": "eval_loss",
     "greater_is_better": False,
