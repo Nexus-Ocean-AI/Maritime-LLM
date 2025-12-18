@@ -60,7 +60,7 @@ TRAINING_CONFIG = {
     "per_device_train_batch_size": 16, 
     "gradient_accumulation_steps": 4, 
     "warmup_ratio": 0.05, # Higher warmup for fresh training
-    "num_train_epochs": 3,
+    "num_train_epochs": 2,
     "learning_rate": 1e-4, # Reduced LR to prevent overfitting
     "logging_steps": 10,
     "save_steps": 500,
