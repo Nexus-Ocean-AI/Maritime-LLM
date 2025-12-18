@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Qwen3-30B base model (same as used in training)
-BASE_MODEL_ID = "Qwen/Qwen3-30B-A3B-Instruct"
+BASE_MODEL_ID = "unsloth/Qwen3-30B-A3B-Instruct-2507"
 
 DEFAULT_MODEL_DIR = "outputs_qwen3_finetune_v2"
 
