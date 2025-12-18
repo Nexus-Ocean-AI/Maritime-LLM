@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Model Configuration
 BASE_MODEL_NAME = "unsloth/Qwen3-30B-A3B-Instruct-2507"
-MAX_SEQ_LENGTH = 8192
+MAX_SEQ_LENGTH = 4096  # Reduced from 8192 for faster training
 DTYPE = None  # Auto detection
 LOAD_IN_4BIT = True  # 4-bit QLoRA
 
@@ -63,7 +63,7 @@ TRAINING_CONFIG = {
     "num_train_epochs": 2,
     "learning_rate": 1e-4, # Reduced LR to prevent overfitting
     "logging_steps": 10,
-    "save_steps": 500,
+    "save_steps": 250,
     "save_total_limit": 3,
     "optim": "adamw_8bit",
     "weight_decay": 0.1, # Increased weight decay for regularization
@@ -72,7 +72,7 @@ TRAINING_CONFIG = {
     "seed": 3407,
     "bf16": True,
     "eval_strategy": "steps",
-    "eval_steps": 500,
+    "eval_steps": 250,
     "load_best_model_at_end": True,
     "metric_for_best_model": "eval_loss",
     "greater_is_better": False,
@@ -269,7 +269,9 @@ def run_training(args):
             greater_is_better=TRAINING_CONFIG["greater_is_better"],
             neftune_noise_alpha=TRAINING_CONFIG.get("neftune_noise_alpha"),
             report_to="none",
+            dataloader_num_workers=4,  # Speed up data loading
         ),
+        packing=True,  # Packs short sequences together for faster training
     )
     
     # 5. Train
