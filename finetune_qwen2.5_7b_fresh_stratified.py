@@ -1,11 +1,11 @@
 """
-Fine-tune Qwen3-30B for Maritime Domain - Fresh Training with Token-Stratified Split
+Fine-tune Qwen2.5-7B for Maritime Domain - Fresh Training with Token-Stratified Split and Anti-Overfitting
 
 This script:
-1. Loads the merged dataset.
+1. Loads the dataset (processed_queries_20251216_014609.jsonl).
 2. Performs a stratified split based on 'total_tokens' to ensure balanced token distribution across Train/Val/Test.
-3. Trains from the BASE model (no previous adapters) for 3 epochs.
-4. Uses a system prompt encouraging source citations.
+3. Trains from the BASE Qwen2.5-7B-Instruct model (fresh start, no previous adapters) for better stability.
+4. Uses strong regularization (Dropout, Weight Decay, NEFTune) to reduce overfitting.
 """
 
 import os
@@ -36,37 +36,37 @@ logger = logging.getLogger(__name__)
 # Configuration
 # -----------------------------------------------------------------------------
 # Model Configuration
-BASE_MODEL_NAME = "unsloth/Qwen3-30B-A3B-Instruct-2507"
-MAX_SEQ_LENGTH = 8192
+BASE_MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" 
+MAX_SEQ_LENGTH = 8192 # Keeping high context from Qwen3 script, or 4096 if memory constrained
 DTYPE = None  # Auto detection
 LOAD_IN_4BIT = True  # 4-bit QLoRA
 
 # Dataset Configuration
-DATASET_PATH = "processed_queries_merged.jsonl"
+DATASET_PATH = "processed_queries_20251216_014609.jsonl"
 TRAIN_RATIO = 0.90
 VAL_RATIO = 0.05
 TEST_RATIO = 0.05
 RANDOM_SEED = 42
 
-# LoRA Config
+# LoRA Config - Anti-Overfitting
 LORA_R = 32
 LORA_ALPHA = 64
-LORA_DROPOUT = 0.10  # Increased dropout to prevent overfitting
+LORA_DROPOUT = 0.10  # Increased dropout to prevent overfitting (vs 0 in original 7b script)
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj",
                   "gate_proj", "up_proj", "down_proj"]
 
 # Training Configuration
 TRAINING_CONFIG = {
-    "per_device_train_batch_size": 16, 
-    "gradient_accumulation_steps": 4, 
+    "per_device_train_batch_size": 16, # Can handle larger batch on 7B than 30B
+    "gradient_accumulation_steps": 4,  # Effective batch size = 64
     "warmup_ratio": 0.05, # Higher warmup for fresh training
     "num_train_epochs": 3,
-    "learning_rate": 1e-4, # Reduced LR to prevent overfitting
+    "learning_rate": 1e-4, # Reduced LR to prevent overfitting (was 2e-4 in 7b script)
     "logging_steps": 10,
     "save_steps": 500,
     "save_total_limit": 3,
     "optim": "adamw_8bit",
-    "weight_decay": 0.1, # Increased weight decay for regularization
+    "weight_decay": 0.1, # Increased weight decay for regularization (was 0.01 in 7b script)
     "neftune_noise_alpha": 5, # NEFTune noise for better generalization
     "lr_scheduler_type": "cosine",
     "seed": 3407,
@@ -79,7 +79,7 @@ TRAINING_CONFIG = {
 }
 
 # Output Configuration
-OUTPUT_DIR = "outputs_qwen3_stratified_fresh"
+OUTPUT_DIR = "outputs_qwen2.5_7b_stratified_fresh"
 
 
 def load_and_stratified_split(dataset_path: str, train_ratio: float, val_ratio: float, 
@@ -158,6 +158,7 @@ def load_and_stratified_split(dataset_path: str, train_ratio: float, val_ratio: 
 
 def format_dataset(dataset_dict: DatasetDict, tokenizer) -> DatasetDict:
     """Format with prompt template requesting sources."""
+    # Using the prompt template from Qwen3 fresh training
     prompt_template = """<|im_start|>system
 You are a highly knowledgeable maritime expert. You are provided with a query related to maritime regulations, safety standards, or operational manuals. Answer the query accurately and comprehensively, citing relevant sources (such as specific Regulations, Standards, Codes, Books, or Papers) whenever possible.<|im_end|>
 <|im_start|>user
@@ -188,7 +189,7 @@ You are a highly knowledgeable maritime expert. You are provided with a query re
 def run_training(args):
     """Main training function."""
     print("\n" + "=" * 80)
-    print("🚢 QWEN3-30B MARITIME FINE-TUNING - FRESH STRATIFIED")
+    print("🚢 QWEN2.5-7B MARITIME FINE-TUNING - FRESH STRATIFIED")
     print("=" * 80 + "\n")
     
     # Create output directory
@@ -214,7 +215,7 @@ def run_training(args):
         lora_alpha=LORA_ALPHA,
         lora_dropout=LORA_DROPOUT,
         bias="none",
-        use_gradient_checkpointing="unsloth", # True or "unsloth" for long contexts
+        use_gradient_checkpointing="unsloth", 
         random_state=3407,
     )
 
@@ -295,7 +296,7 @@ def run_training(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fresh Stratified Fine-tuning Qwen3-30B")
+    parser = argparse.ArgumentParser(description="Fresh Stratified Fine-tuning Qwen2.5-7B")
     parser.add_argument("--dataset", type=str, default=DATASET_PATH, help="Path to dataset")
     parser.add_argument("--epochs", type=int, default=3, help="Epochs (default: 3)")
     
