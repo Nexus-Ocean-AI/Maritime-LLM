@@ -1,0 +1,28 @@
+{
+  "model_dir": "./outputs_qwen3_finetune_v2_20251217_090754",
+  "num_samples": 213,
+  "timestamp": "20251218_041735",
+  "base_model": "unsloth/Qwen3-30B-A3B-Instruct-2507",
+  "inference_engine": "vLLM",
+  "model_type": "Qwen3-30B",
+  "sft_metrics": {
+    "rouge1_f_mean": 0.559682444469841,
+    "rouge2_f_mean": 0.19386877120267412,
+    "rougeL_f_mean": 0.23246584429355607,
+    "bleu_mean": 0.08302568493402196,
+    "avg_length": 4887.8779342723
+  },
+  "base_metrics": {
+    "rouge1_f_mean": 0.473835182337497,
+    "rouge2_f_mean": 0.13035762469623763,
+    "rougeL_f_mean": 0.17868312804860578,
+    "bleu_mean": 0.03281835146282282,
+    "avg_length": 7215.56338028169
+  },
+  "improvement": {
+    "rouge1_f": 0.08584726213234395,
+    "rouge2_f": 0.0635111465064365,
+    "rougeL_f": 0.05378271624495029,
+    "bleu": 0.05020733347119914
+  }
+}
