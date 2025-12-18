@@ -1,0 +1,27 @@
+{
+  "model_dir": "outputs_qwen2.5_7b_sft_v2_20251217_105003",
+  "num_samples": 213,
+  "timestamp": "20251218_033939",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "inference_engine": "vLLM",
+  "sft_metrics": {
+    "rouge1_f_mean": 0.23901853491717767,
+    "rouge2_f_mean": 0.08241396589148663,
+    "rougeL_f_mean": 0.13597428215633248,
+    "bleu_mean": 0.002033834567104261,
+    "avg_length": 1020.962441314554
+  },
+  "base_metrics": {
+    "rouge1_f_mean": 0.4655234320184689,
+    "rouge2_f_mean": 0.126750007199779,
+    "rougeL_f_mean": 0.19066431373795267,
+    "bleu_mean": 0.04247228185648801,
+    "avg_length": 5963.0610328638495
+  },
+  "improvement": {
+    "rouge1_f": -0.22650489710129124,
+    "rouge2_f": -0.04433604130829237,
+    "rougeL_f": -0.054690031581620197,
+    "bleu": -0.040438447289383755
+  }
+}
